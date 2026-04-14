@@ -12,7 +12,6 @@ export default function SettingsPage() {
   const [discoverable, setDiscoverable] = useState(false);
   const [username, setUsername] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
-  const [wallpaper, setWallpaper] = useState("");
   const [saving, setSaving] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -28,7 +27,7 @@ export default function SettingsPage() {
       const supabase = createClient();
       const { data } = await supabase
         .from("users")
-        .select("username, discoverable, avatar_url, wallpaper")
+        .select("username, discoverable, avatar_url")
         .eq("id", user!.id)
         .single();
 
@@ -36,7 +35,6 @@ export default function SettingsPage() {
         setUsername(data.username);
         setDiscoverable(data.discoverable);
         setAvatarUrl(data.avatar_url || "");
-        setWallpaper(data.wallpaper || "");
       }
       setLoadingProfile(false);
     }
@@ -54,7 +52,7 @@ export default function SettingsPage() {
     setSaving(false);
   };
 
-  const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: "avatar" | "wallpaper") => {
+  const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: "avatar") => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
     
@@ -75,21 +73,9 @@ export default function SettingsPage() {
     const { data: { publicUrl } } = supabase.storage.from("user-assets").getPublicUrl(filePath);
     
     // Save URL to users table
-    const updateField = type === "avatar" ? { avatar_url: publicUrl } : { wallpaper: publicUrl };
-    await supabase.from("users").update(updateField).eq("id", user.id);
+    await supabase.from("users").update({ avatar_url: publicUrl }).eq("id", user.id);
     
-    if (type === "avatar") setAvatarUrl(publicUrl);
-    else setWallpaper(publicUrl);
-    
-    setSaving(false);
-  };
-
-  const handleColorWallpaper = async (color: string) => {
-    if (!user) return;
-    setSaving(true);
-    const supabase = createClient();
-    await supabase.from("users").update({ wallpaper: color }).eq("id", user.id);
-    setWallpaper(color);
+    setAvatarUrl(publicUrl);
     setSaving(false);
   };
 
@@ -187,37 +173,6 @@ export default function SettingsPage() {
               <input type="file" accept="image/*" hidden disabled={saving} onChange={(e) => handleMediaUpload(e, "avatar")} />
             </label>
           </div>
-        </div>
-
-        {/* Wallpaper */}
-        <div className="settings-row" style={{ flexDirection: "column", alignItems: "flex-start", gap: 16 }}>
-          <div className="settings-row-label">
-            <h4>Chat Wallpaper</h4>
-            <p>Customize the background behind your chat conversations</p>
-          </div>
-          
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-            <button className="wallpaper-btn" style={{ background: "var(--bg-chat)" }} onClick={() => handleColorWallpaper("")}>
-              {(!wallpaper || wallpaper === "var(--bg-chat)") && "✓"}
-            </button>
-            <button className="wallpaper-btn" style={{ background: "#FFD700" }} onClick={() => handleColorWallpaper("#FFD700")}>
-              {wallpaper === "#FFD700" && "✓"}
-            </button>
-            <button className="wallpaper-btn" style={{ background: "#A8E6E0" }} onClick={() => handleColorWallpaper("#A8E6E0")}>
-              {wallpaper === "#A8E6E0" && "✓"}
-            </button>
-            <button className="wallpaper-btn" style={{ background: "#FFB8D0" }} onClick={() => handleColorWallpaper("#FFB8D0")}>
-              {wallpaper === "#FFB8D0" && "✓"}
-            </button>
-            
-            <label className="btn btn--small btn--ghost" style={{ cursor: saving ? "wait" : "pointer" }}>
-              🖼️ Custom Image
-              <input type="file" accept="image/*" hidden disabled={saving} onChange={(e) => handleMediaUpload(e, "wallpaper")} />
-            </label>
-          </div>
-          {wallpaper && wallpaper.startsWith("http") && (
-            <div style={{ fontSize: "0.8rem", color: "var(--green)", fontWeight: 600 }}>✓ Custom Image Selected</div>
-          )}
         </div>
       </div>
 

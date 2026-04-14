@@ -140,23 +140,7 @@ h4 { font-size: 1.25rem; }
 }
 .btn:hover { transform: translate(2px, 2px); box-shadow: var(--shadow-hover); }
 
-/* Appearance Settings */
-.wallpaper-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 2px solid var(--border-color);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #1a1a1a;
-  font-weight: bold;
-  transition: transform 0.2s;
-}
-.wallpaper-btn:hover {
-  transform: scale(1.1);
-}
+
 .btn:active { transform: translate(4px, 4px); box-shadow: none; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: var(--shadow); }
 .btn--primary { background: var(--yellow); color: var(--text-primary); }
