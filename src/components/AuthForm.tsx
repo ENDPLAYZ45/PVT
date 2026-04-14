@@ -4,6 +4,10 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { generateKeyPair } from "@/lib/crypto/keygen";
 import { storePrivateKey } from "@/lib/crypto/indexeddb";
+import {
+  encryptPrivateKeyWithPassword,
+  decryptPrivateKeyWithPassword,
+} from "@/lib/crypto/keyWrap";
 import { useRouter } from "next/navigation";
 
 interface AuthFormProps {
@@ -16,6 +20,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
   const [username, setUsername] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState("");
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -27,55 +32,86 @@ export default function AuthForm({ mode }: AuthFormProps) {
 
     try {
       if (mode === "signup") {
-        // 1. Sign up with Supabase Auth
-        const { data: authData, error: authError } =
-          await supabase.auth.signUp({
-            email,
-            password,
-          });
+        setLoadingMsg("Creating account...");
 
+        // 1. Sign up with Supabase Auth
+        const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
         if (authError) throw authError;
         if (!authData.user) throw new Error("Signup failed");
 
-        // 2. Generate RSA-OAEP key pair
-        const { publicKeyJwk, privateKey } = await generateKeyPair();
+        setLoadingMsg("🔐 Generating encryption keys...");
 
-        // 3. Store private key in IndexedDB (non-extractable)
+        // 2. Generate RSA-OAEP key pair
+        const { publicKeyJwk, privateKey, extractablePrivateKey } = await generateKeyPair();
+
+        setLoadingMsg("🔒 Backing up key securely...");
+
+        // 3. Encrypt private key with password (for cloud backup / cross-device)
+        const encryptedPrivateKey = await encryptPrivateKeyWithPassword(
+          extractablePrivateKey,
+          password
+        );
+
+        // 4. Store non-extractable private key in IndexedDB (fast local access)
         await storePrivateKey(authData.user.id, privateKey);
 
-        // 4. Store public key + username in users table
+        // 5. Store public key + encrypted private key in users table
         const { error: profileError } = await supabase.from("users").insert({
           id: authData.user.id,
           username: username.toLowerCase().trim(),
           email,
           public_key: JSON.stringify(publicKeyJwk),
+          encrypted_private_key: encryptedPrivateKey,
           discoverable: false,
         });
 
         if (profileError) throw profileError;
 
-        // Mark first login for key warning
-        localStorage.setItem("pvt_first_login", "true");
-
         router.push("/chat");
       } else {
-        // Login
-        const { data, error: loginError } =
-          await supabase.auth.signInWithPassword({
-            email,
-            password,
-          });
+        // LOGIN
+        setLoadingMsg("Signing in...");
 
+        const { data, error: loginError } = await supabase.auth.signInWithPassword({ email, password });
         if (loginError) throw loginError;
+        if (!data.user) throw new Error("Login failed");
+
+        // Check if key already exists in IndexedDB
+        const { hasPrivateKey } = await import("@/lib/crypto/indexeddb");
+        const hasKey = await hasPrivateKey(data.user.id);
+
+        if (!hasKey) {
+          setLoadingMsg("🔑 Restoring encryption key...");
+
+          // Fetch encrypted private key from Supabase
+          const { data: userData, error: fetchErr } = await supabase
+            .from("users")
+            .select("encrypted_private_key")
+            .eq("id", data.user.id)
+            .single();
+
+          if (fetchErr || !userData?.encrypted_private_key) {
+            throw new Error("Could not restore encryption key. Please contact support.");
+          }
+
+          // Decrypt the private key using the password
+          const restoredKey = await decryptPrivateKeyWithPassword(
+            userData.encrypted_private_key,
+            password
+          );
+
+          // Store restored key in IndexedDB
+          await storePrivateKey(data.user.id, restoredKey);
+        }
 
         router.push("/chat");
       }
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Something went wrong";
+      const message = err instanceof Error ? err.message : "Something went wrong";
       setError(message);
     } finally {
       setLoading(false);
+      setLoadingMsg("");
     }
   };
 
@@ -135,13 +171,17 @@ export default function AuthForm({ mode }: AuthFormProps) {
         disabled={loading}
       >
         {loading
-          ? mode === "signup"
-            ? "🔐 Generating keys..."
-            : "Signing in..."
+          ? loadingMsg || "Loading..."
           : mode === "signup"
           ? "🔐 Sign Up & Generate Keys"
           : "→ Sign In"}
       </button>
+
+      {mode === "login" && (
+        <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", textAlign: "center" }}>
+          🔑 Your encryption key is restored from your password — messages are accessible on all devices.
+        </p>
+      )}
     </form>
   );
 }
