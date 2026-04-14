@@ -21,13 +21,19 @@ export default function PanicButton({ currentUserId, partnerId }: PanicButtonPro
     router.push("/safe");
 
     // 2. Notify partner silently in the background (fire & forget)
-    const supabase = createClient();
-    supabase.from("messages").insert({
-      sender_id: currentUserId,
-      receiver_id: partnerId,
-      ciphertext: "__SYSTEM__PANIC__",
-      sender_ciphertext: "__SYSTEM__PANIC__",
-    }).then(() => {}).catch(() => {});
+    void (async () => {
+      try {
+        const supabase = createClient();
+        await supabase.from("messages").insert({
+          sender_id: currentUserId,
+          receiver_id: partnerId,
+          ciphertext: "__SYSTEM__PANIC__",
+          sender_ciphertext: "__SYSTEM__PANIC__",
+        });
+      } catch {
+        // Silent — don't block the redirect
+      }
+    })();
   };
 
   return (
