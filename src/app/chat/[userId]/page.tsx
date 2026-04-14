@@ -82,13 +82,18 @@ export default function ConversationPage() {
 
     const supabase = createClient();
 
-    // Delete all messages in this conversation where the current user is sender or receiver
+    // Two separate deletes — more reliable than nested .or() with RLS
     await supabase
       .from("messages")
       .delete()
-      .or(
-        `and(sender_id.eq.${user.id},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${user.id})`
-      );
+      .eq("sender_id", user.id)
+      .eq("receiver_id", partnerId);
+
+    await supabase
+      .from("messages")
+      .delete()
+      .eq("sender_id", partnerId)
+      .eq("receiver_id", user.id);
 
     clearMessages();
     setClearing(false);
