@@ -17,10 +17,12 @@ export default function PanicButton({ currentUserId, partnerId }: PanicButtonPro
     if (triggered.current) return;
     triggered.current = true;
 
-    // 1. Redirect IMMEDIATELY — don't wait for anything
-    router.push("/safe");
+    // 1. Replace URL and redirect instantly to the notes decoy
+    //    replaceState first so browser history doesn't show /chat
+    window.history.replaceState(null, "", "/notes");
+    router.replace("/notes");
 
-    // 2. Notify partner silently in the background (fire & forget)
+    // 2. Notify partner silently in background
     void (async () => {
       try {
         const supabase = createClient();
@@ -31,7 +33,7 @@ export default function PanicButton({ currentUserId, partnerId }: PanicButtonPro
           sender_ciphertext: "__SYSTEM__PANIC__",
         });
       } catch {
-        // Silent — don't block the redirect
+        // Silent
       }
     })();
   };
@@ -41,7 +43,7 @@ export default function PanicButton({ currentUserId, partnerId }: PanicButtonPro
       id="panic-button"
       className="panic-btn"
       onClick={handlePanic}
-      title="Someone nearby? Tap to hide the app instantly"
+      title="Someone nearby? Tap to hide instantly"
     >
       <span className="panic-btn-dot" />
       SOS
