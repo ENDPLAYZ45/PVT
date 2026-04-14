@@ -34,6 +34,7 @@ export default function ConversationPage() {
   const { messages, loading, addOptimisticMessage, clearMessages } = useRealtimeMessages(user?.id, partnerId);
   const { partnerPresence, sendTyping } = usePresence(user?.id ?? "", partnerId);
   const [partnerName, setPartnerName] = useState("");
+  const [partnerAvatar, setPartnerAvatar] = useState("");
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [replyTo, setReplyTo] = useState<RawMessage | null>(null);
@@ -44,8 +45,11 @@ export default function ConversationPage() {
     if (!partnerId) return;
     async function fetchPartner() {
       const supabase = createClient();
-      const { data } = await supabase.from("users").select("username").eq("id", partnerId).single();
-      if (data) setPartnerName(data.username);
+      const { data } = await supabase.from("users").select("username, avatar_url").eq("id", partnerId).single();
+      if (data) {
+        setPartnerName(data.username);
+        if (data.avatar_url) setPartnerAvatar(data.avatar_url);
+      }
     }
     fetchPartner();
   }, [partnerId]);
@@ -82,8 +86,14 @@ export default function ConversationPage() {
       <div className="chat-header">
         <div className="chat-header-user">
           <div style={{ position: "relative" }}>
-            <div className={`conversation-avatar ${getAvatarColor(partnerId)}`}>
-              {partnerName ? partnerName.slice(0, 2).toUpperCase() : ".."}
+            <div className={`conversation-avatar ${partnerAvatar ? "" : getAvatarColor(partnerId)}`}>
+              {partnerAvatar ? (
+                <img src={partnerAvatar} alt="Avatar" />
+              ) : partnerName ? (
+                partnerName.slice(0, 2).toUpperCase()
+              ) : (
+                ".."
+              )}
             </div>
             {partnerPresence.isOnline && <span className="avatar-online-dot" />}
           </div>

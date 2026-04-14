@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { useSupabaseUser } from "@/hooks/useSupabaseUser";
 import { useConversations } from "@/hooks/useConversations";
 import ChatSidebar from "@/components/ChatSidebar";
@@ -11,8 +12,19 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
   const { user, loading } = useSupabaseUser();
   const { conversations } = useConversations(user?.id);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [wallpaper, setWallpaper] = useState("");
   const params = useParams();
   const hasActiveChat = !!params?.userId; // true when a conversation is open
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchWallpaper = async () => {
+      const supabase = createClient();
+      const { data } = await supabase.from("users").select("wallpaper").eq("id", user.id).single();
+      if (data?.wallpaper) setWallpaper(data.wallpaper);
+    };
+    fetchWallpaper();
+  }, [user]);
 
   if (loading) {
     return (
@@ -39,7 +51,17 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
         </div>
 
         {/* Chat area — hidden on mobile when NO chat is open */}
-        <div className={`chat-area ${!hasActiveChat ? "chat-area--hidden-mobile" : ""}`} style={{ overflowY: "auto" }}>
+        <div 
+          className={`chat-area ${!hasActiveChat ? "chat-area--hidden-mobile" : ""}`} 
+          style={{ 
+            overflowY: "auto",
+            ...(wallpaper ? (
+              wallpaper.startsWith("http") 
+                ? { backgroundImage: `url(${wallpaper})`, backgroundSize: "cover", backgroundPosition: "center", backgroundAttachment: "fixed" }
+                : { background: wallpaper }
+            ) : {})
+          }}
+        >
           {/* Mobile back button — shown inside chat header via CSS class */}
           <div className="mobile-back-bar">
             <button

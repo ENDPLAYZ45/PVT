@@ -22,6 +22,7 @@ function getAvatarColor(id: string) {
 interface SearchResult {
   id: string;
   username: string;
+  avatar_url?: string;
 }
 
 interface UserSearchProps {
@@ -55,7 +56,7 @@ export default function UserSearch({ onClose, currentUserId }: UserSearchProps) 
 
       const { data, error } = await supabase
         .from("users")
-        .select("id, username")
+        .select("id, username, avatar_url")
         .eq("discoverable", true)
         .ilike("username", `%${query.trim()}%`)
         .neq("id", currentUserId)
@@ -111,8 +112,12 @@ export default function UserSearch({ onClose, currentUserId }: UserSearchProps) 
               className="search-result-item"
               onClick={() => handleSelect(user.id)}
             >
-              <div className={`conversation-avatar ${getAvatarColor(user.id)}`}>
-                {user.username.slice(0, 2)}
+              <div className={`conversation-avatar ${user.avatar_url ? "" : getAvatarColor(user.id)}`}>
+                {user.avatar_url ? (
+                  <img src={user.avatar_url} alt="Avatar" />
+                ) : (
+                  user.username.slice(0, 2).toUpperCase()
+                )}
               </div>
               <div>
                 <div className="conversation-name">{user.username}</div>

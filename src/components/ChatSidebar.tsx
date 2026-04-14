@@ -36,6 +36,7 @@ function formatTime(dateStr: string) {
 interface Conversation {
   user_id: string;
   username: string;
+  avatar_url?: string;
   last_message_at: string;
   unread: boolean;
 }
@@ -124,9 +125,13 @@ export default function ChatSidebar({
               }}
             >
               <div
-                className={`conversation-avatar ${getAvatarColor(convo.user_id)}`}
+                className={`conversation-avatar ${convo.avatar_url ? "" : getAvatarColor(convo.user_id)}`}
               >
-                {convo.username.slice(0, 2)}
+                {convo.avatar_url ? (
+                  <img src={convo.avatar_url} alt="Avatar" />
+                ) : (
+                  convo.username.slice(0, 2).toUpperCase()
+                )}
               </div>
               <div className="conversation-info">
                 <div className="conversation-name">{convo.username}</div>

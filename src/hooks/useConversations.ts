@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 interface Conversation {
   user_id: string;
   username: string;
+  avatar_url?: string;
   last_message_at: string;
   unread: boolean;
 }
@@ -62,12 +63,13 @@ export function useConversations(currentUserId: string | undefined) {
 
       const { data: users } = await supabase
         .from("users")
-        .select("id, username")
+        .select("id, username, avatar_url")
         .in("id", partnerIds);
 
       const convos: Conversation[] = (users || []).map((u) => ({
         user_id: u.id,
         username: u.username,
+        avatar_url: u.avatar_url,
         last_message_at: partnerMap.get(u.id)?.last_message_at || "",
         unread: partnerMap.get(u.id)?.unread || false,
       }));
