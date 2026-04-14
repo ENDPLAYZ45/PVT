@@ -1,57 +1,155 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
-const DEFAULT_NOTES = [
-  { id: 1, title: "Grocery List", body: "• Milk\n• Eggs\n• Bread\n• Butter\n• Coffee\n• Fruits", time: "10:30 AM", pinned: true },
-  { id: 2, title: "Weekend Plans", body: "Call mom on Sunday\nPay electricity bill\nGym — skip leg day?\nMovie with friends maybe", time: "Yesterday", pinned: false },
-  { id: 3, title: "Work Notes", body: "Meeting at 3pm — ask about project timeline\nSend report to Rahul\nDeadline: Friday EOD", time: "Mon", pinned: false },
-  { id: 4, title: "Passwords reminder", body: "Use password manager\nDon't reuse passwords\nUpdate old accounts", time: "Last week", pinned: false },
-  { id: 5, title: "Book recommendations", body: "Atomic Habits — James Clear\nThe Alchemist\nSapiens\nLet's Talk Money", time: "2 weeks ago", pinned: false },
-];
+interface Note {
+  id: string;
+  title: string;
+  body: string;
+  updatedAt: string;
+  createdAt: string;
+  pinned: boolean;
+}
+
+function formatTime(iso: string) {
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = now.getTime() - d.getTime();
+  if (diff < 60000) return "Just now";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (diff < 604800000) return d.toLocaleDateString([], { weekday: "short" });
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+const STORAGE_KEY = "pvt_notes_data";
+
+function loadNotes(): Note[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveNotes(notes: Note[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+}
 
 export default function NotesPage() {
   const router = useRouter();
-  const [selected, setSelected] = useState<typeof DEFAULT_NOTES[0] | null>(null);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [selected, setSelected] = useState<Note | null>(null);
   const [search, setSearch] = useState("");
+  const [editTitle, setEditTitle] = useState("");
+  const [editBody, setEditBody] = useState("");
   const [logoTaps, setLogoTaps] = useState(0);
-  const [tapTimer, setTapTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
 
-  // Secret: tap the "N" logo 3 times to return to chat
+  // Load notes on mount
+  useEffect(() => {
+    const loaded = loadNotes();
+    setNotes(loaded);
+  }, []);
+
+  // Auto-save on edit with 600ms debounce
+  useEffect(() => {
+    if (!selected) return;
+    if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
+    autoSaveRef.current = setTimeout(() => {
+      const updatedNote: Note = {
+        ...selected,
+        title: editTitle.trim() || "Untitled",
+        body: editBody,
+        updatedAt: new Date().toISOString(),
+      };
+      const updated = notes.map((n) => (n.id === selected.id ? updatedNote : n));
+      setNotes(updated);
+      setSelected(updatedNote);
+      saveNotes(updated);
+    }, 600);
+  }, [editTitle, editBody]);
+
+  const createNote = () => {
+    const newNote: Note = {
+      id: crypto.randomUUID(),
+      title: "",
+      body: "",
+      updatedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      pinned: false,
+    };
+    const updated = [newNote, ...notes];
+    setNotes(updated);
+    saveNotes(updated);
+    selectNote(newNote);
+    setTimeout(() => {
+      // Focus title if empty
+      const titleEl = document.getElementById("note-title-input") as HTMLInputElement;
+      if (titleEl) titleEl.focus();
+    }, 50);
+  };
+
+  const selectNote = (note: Note) => {
+    setSelected(note);
+    setEditTitle(note.title);
+    setEditBody(note.body);
+  };
+
+  const deleteNote = (id: string) => {
+    const updated = notes.filter((n) => n.id !== id);
+    setNotes(updated);
+    saveNotes(updated);
+    if (selected?.id === id) {
+      setSelected(null);
+      setEditTitle("");
+      setEditBody("");
+    }
+  };
+
+  const togglePin = (id: string) => {
+    const updated = notes.map((n) => (n.id === id ? { ...n, pinned: !n.pinned } : n));
+    setNotes(updated);
+    saveNotes(updated);
+    if (selected?.id === id) setSelected((prev) => prev ? { ...prev, pinned: !prev.pinned } : null);
+  };
+
+  // Secret exit: tap 📝 logo 3 times within 2s
   const handleLogoTap = () => {
-    const newCount = logoTaps + 1;
-    setLogoTaps(newCount);
-
-    if (tapTimer) clearTimeout(tapTimer);
-    const t = setTimeout(() => setLogoTaps(0), 2000);
-    setTapTimer(t);
-
-    if (newCount >= 3) {
+    const count = logoTaps + 1;
+    setLogoTaps(count);
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+    tapTimerRef.current = setTimeout(() => setLogoTaps(0), 2000);
+    if (count >= 3) {
       setLogoTaps(0);
       router.push("/chat");
     }
   };
 
-  const filtered = DEFAULT_NOTES.filter(
+  const filtered = notes.filter(
     (n) =>
       n.title.toLowerCase().includes(search.toLowerCase()) ||
       n.body.toLowerCase().includes(search.toLowerCase())
   );
-
   const pinned = filtered.filter((n) => n.pinned);
   const others = filtered.filter((n) => !n.pinned);
+  const sorted = [...pinned, ...others].sort((a, b) =>
+    a.pinned === b.pinned ? new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime() : a.pinned ? -1 : 1
+  );
 
   return (
     <div className="notes-layout">
-      {/* Sidebar */}
+      {/* ── Sidebar ── */}
       <div className="notes-sidebar">
         <div className="notes-header">
-          <div className="notes-logo" onClick={handleLogoTap} title="">
-            📝
-          </div>
+          <div className="notes-logo" onClick={handleLogoTap}>📝</div>
           <h1 className="notes-title">Notes</h1>
-          <button className="notes-compose" title="New note">✏️</button>
+          <button className="notes-compose" onClick={createNote} title="New note">
+            ✏️
+          </button>
         </div>
 
         <div className="notes-search-wrap">
@@ -64,72 +162,95 @@ export default function NotesPage() {
           />
         </div>
 
-        {pinned.length > 0 && (
-          <>
-            <div className="notes-section-label">PINNED</div>
-            {pinned.map((note) => (
-              <div
-                key={note.id}
-                className={`notes-item ${selected?.id === note.id ? "notes-item--active" : ""}`}
-                onClick={() => setSelected(note)}
-              >
-                <div className="notes-item-title">{note.title}</div>
-                <div className="notes-item-preview">
-                  <span className="notes-item-time">{note.time}</span>
-                  <span className="notes-item-body">{note.body.split("\n")[0]}</span>
-                </div>
-              </div>
-            ))}
-          </>
-        )}
+        {/* Notes list */}
+        <div className="notes-list">
+          {sorted.length === 0 && (
+            <div className="notes-list-empty">
+              <p>No notes yet.</p>
+              <button className="notes-create-btn" onClick={createNote}>+ New Note</button>
+            </div>
+          )}
 
-        {others.length > 0 && (
-          <>
-            {pinned.length > 0 && <div className="notes-section-label">OTHER NOTES</div>}
-            {others.map((note) => (
-              <div
-                key={note.id}
-                className={`notes-item ${selected?.id === note.id ? "notes-item--active" : ""}`}
-                onClick={() => setSelected(note)}
-              >
-                <div className="notes-item-title">{note.title}</div>
-                <div className="notes-item-preview">
-                  <span className="notes-item-time">{note.time}</span>
-                  <span className="notes-item-body">{note.body.split("\n")[0]}</span>
+          {pinned.length > 0 && <div className="notes-section-label">PINNED</div>}
+          {sorted.map((note) => (
+            <div
+              key={note.id}
+              className={`notes-item ${selected?.id === note.id ? "notes-item--active" : ""}`}
+              onClick={() => selectNote(note)}
+            >
+              <div className="notes-item-row">
+                <div className="notes-item-title">
+                  {note.title || <span style={{ opacity: 0.4 }}>Untitled</span>}
                 </div>
+                {note.pinned && <span className="notes-pin-icon">📌</span>}
               </div>
-            ))}
-          </>
-        )}
+              <div className="notes-item-preview">
+                <span className="notes-item-time">{formatTime(note.updatedAt)}</span>
+                <span className="notes-item-body">
+                  {note.body.split("\n")[0] || "No additional text"}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
 
         <div className="notes-footer">
-          <span>{DEFAULT_NOTES.length} Notes</span>
+          {notes.length === 0 ? "No notes" : `${notes.length} ${notes.length === 1 ? "note" : "notes"}`}
         </div>
       </div>
 
-      {/* Note detail */}
+      {/* ── Detail / Editor ── */}
       <div className="notes-detail">
         {selected ? (
           <>
             <div className="notes-detail-header">
-              <div className="notes-detail-time">Edited {selected.time}</div>
+              <div className="notes-detail-time">
+                {selected.updatedAt !== selected.createdAt
+                  ? `Edited ${formatTime(selected.updatedAt)}`
+                  : `Created ${formatTime(selected.createdAt)}`}
+              </div>
               <div className="notes-detail-actions">
-                <button className="notes-action-btn">⋯</button>
+                <button
+                  className="notes-action-btn"
+                  onClick={() => togglePin(selected.id)}
+                  title={selected.pinned ? "Unpin" : "Pin"}
+                >
+                  {selected.pinned ? "📌" : "📍"}
+                </button>
+                <button
+                  className="notes-action-btn notes-delete-btn"
+                  onClick={() => deleteNote(selected.id)}
+                  title="Delete note"
+                >
+                  🗑️
+                </button>
               </div>
             </div>
-            <div className="notes-detail-body">
-              <h2 className="notes-detail-title">{selected.title}</h2>
-              <div className="notes-detail-text">
-                {selected.body.split("\n").map((line, i) => (
-                  <p key={i}>{line || <br />}</p>
-                ))}
-              </div>
+            <div className="notes-editor">
+              <input
+                id="note-title-input"
+                className="notes-editor-title"
+                type="text"
+                placeholder="Title"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+              />
+              <textarea
+                ref={bodyRef}
+                className="notes-editor-body"
+                placeholder="Start writing..."
+                value={editBody}
+                onChange={(e) => setEditBody(e.target.value)}
+              />
             </div>
           </>
         ) : (
           <div className="notes-empty">
             <div className="notes-empty-icon">📝</div>
-            <p>Select a note to read it</p>
+            <p>Select a note or create a new one</p>
+            <button className="notes-create-btn" onClick={createNote}>
+              + New Note
+            </button>
           </div>
         )}
       </div>
