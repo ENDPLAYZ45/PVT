@@ -23,7 +23,7 @@ async function deriveWrappingKey(
   return crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
-      salt,
+      salt: salt.buffer.slice(0) as ArrayBuffer,
       iterations: 200_000,
       hash: "SHA-256",
     },
@@ -33,6 +33,7 @@ async function deriveWrappingKey(
     ["wrapKey", "unwrapKey"]
   );
 }
+
 
 /**
  * Encrypt (wrap) the RSA private key using the user's password.
@@ -48,7 +49,7 @@ export async function encryptPrivateKeyWithPassword(
 
   const wrapped = await crypto.subtle.wrapKey("pkcs8", privateKey, wrappingKey, {
     name: "AES-GCM",
-    iv,
+    iv: iv.buffer.slice(0) as ArrayBuffer,
   });
 
   // Pack salt (16) + iv (12) + wrapped key into one Uint8Array
@@ -78,11 +79,11 @@ export async function decryptPrivateKeyWithPassword(
 
   return crypto.subtle.unwrapKey(
     "pkcs8",
-    wrappedKey,
+    wrappedKey.buffer.slice(0) as ArrayBuffer,
     wrappingKey,
-    { name: "AES-GCM", iv },
+    { name: "AES-GCM", iv: iv.buffer.slice(0) as ArrayBuffer },
     { name: "RSA-OAEP", hash: "SHA-256" },
-    false, // non-extractable
+    false,
     ["decrypt"]
   );
 }
