@@ -97,7 +97,12 @@ export default function MessageInput({
 
         if (uploadError) throw new Error("Upload failed: " + uploadError.message);
 
-        const { data: urlData } = supabase.storage.from("chat-media").getPublicUrl(fileName);
+        // Generate a long-lived signed URL (1 year) — bucket is private, only auth users can access
+        const { data: signedData, error: signErr } = await supabase.storage
+          .from("chat-media")
+          .createSignedUrl(fileName, 60 * 60 * 24 * 365); // 1 year
+
+        if (signErr || !signedData?.signedUrl) throw new Error("Could not generate signed URL");
 
         const { data: msgData, error: insertError } = await supabase
           .from("messages")
@@ -107,7 +112,8 @@ export default function MessageInput({
             ciphertext: "__IMAGE__",
             sender_ciphertext: "__IMAGE__",
             message_type: "image",
-            image_url: urlData.publicUrl,
+            image_url: signedData.signedUrl,
+
             image_aes_key: aesKeyForReceiver,
             image_aes_key_sender: aesKeyForSender,
             image_iv: ivBase64,
