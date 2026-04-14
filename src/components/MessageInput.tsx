@@ -1,133 +1,220 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { encryptMessage } from "@/lib/crypto/encrypt";
+import { encryptImageForUpload } from "@/lib/crypto/imageEncrypt";
+import { RawMessage } from "@/hooks/useRealtimeMessages";
 
 interface MessageInputProps {
   receiverId: string;
   currentUserId: string;
-  onMessageSent: (msg: {
-    id: string;
-    sender_id: string;
-    receiver_id: string;
-    ciphertext: string;
-    sender_ciphertext: string | null;
-    delivered_at: null;
-    created_at: string;
-    _plaintext?: string; // local-only plaintext for optimistic display
-  }) => void;
+  onMessageSent: (msg: RawMessage) => void;
+  onTyping: (isTyping: boolean) => void;
+  replyTo: RawMessage | null;
+  onCancelReply: () => void;
 }
 
 export default function MessageInput({
   receiverId,
   currentUserId,
   onMessageSent,
+  onTyping,
+  replyTo,
+  onCancelReply,
 }: MessageInputProps) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [imagePreview, setImagePreview] = useState<{ file: File; previewUrl: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const typingRef = useRef(false);
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setText(e.target.value);
+    if (!typingRef.current) {
+      typingRef.current = true;
+      onTyping(true);
+    }
+  };
+
+  const handleBlur = () => {
+    typingRef.current = false;
+    onTyping(false);
+  };
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setError("Only image files are supported"); return; }
+    if (file.size > 5 * 1024 * 1024) { setError("Image must be under 5MB"); return; }
+    const previewUrl = URL.createObjectURL(file);
+    setImagePreview({ file, previewUrl });
+    setError("");
+  };
+
+  const cancelImage = () => {
+    if (imagePreview) URL.revokeObjectURL(imagePreview.previewUrl);
+    setImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   const handleSend = async () => {
-    if (!text.trim() || sending) return;
-
-    const plaintext = text.trim();
+    if ((!text.trim() && !imagePreview) || sending) return;
     setSending(true);
     setError("");
+    typingRef.current = false;
+    onTyping(false);
 
     try {
       const supabase = createClient();
 
-      // 1. Fetch receiver's public key
-      const { data: receiverData, error: fetchError } = await supabase
-        .from("users")
-        .select("public_key")
-        .eq("id", receiverId)
-        .single();
+      const { data: receiverData } = await supabase.from("users").select("public_key").eq("id", receiverId).single();
+      const { data: senderData } = await supabase.from("users").select("public_key").eq("id", currentUserId).single();
 
-      if (fetchError || !receiverData) {
-        throw new Error("Could not fetch receiver's public key");
+      if (!receiverData?.public_key) throw new Error("Could not fetch receiver's key");
+
+      const receiverPublicKey = JSON.parse(receiverData.public_key) as JsonWebKey;
+      const senderPublicKey = senderData?.public_key ? JSON.parse(senderData.public_key) as JsonWebKey : null;
+
+      // Reply preview
+      const replyPreview = replyTo
+        ? (replyTo._plaintext ?? "🔒 Encrypted message").slice(0, 80)
+        : null;
+
+      if (imagePreview) {
+        // ---- IMAGE SEND ----
+        if (!senderPublicKey) throw new Error("No sender public key");
+
+        const { encryptedBlob, ivBase64, aesKeyForReceiver, aesKeyForSender, mimeType } =
+          await encryptImageForUpload(imagePreview.file, receiverPublicKey, senderPublicKey);
+
+        // Upload encrypted blob to Supabase Storage
+        const fileName = `${currentUserId}/${Date.now()}.enc`;
+        const { error: uploadError } = await supabase.storage
+          .from("chat-media")
+          .upload(fileName, encryptedBlob, { contentType: "application/octet-stream" });
+
+        if (uploadError) throw new Error("Upload failed: " + uploadError.message);
+
+        const { data: urlData } = supabase.storage.from("chat-media").getPublicUrl(fileName);
+
+        const { data: msgData, error: insertError } = await supabase
+          .from("messages")
+          .insert({
+            sender_id: currentUserId,
+            receiver_id: receiverId,
+            ciphertext: "__IMAGE__",
+            sender_ciphertext: "__IMAGE__",
+            message_type: "image",
+            image_url: urlData.publicUrl,
+            image_aes_key: aesKeyForReceiver,
+            image_aes_key_sender: aesKeyForSender,
+            image_iv: ivBase64,
+            image_mime: mimeType,
+            reply_to_id: replyTo?.id ?? null,
+            reply_preview: replyPreview,
+          })
+          .select().single();
+
+        if (insertError) throw insertError;
+        if (msgData) onMessageSent({ ...msgData as RawMessage, _plaintext: "[Image]" });
+        cancelImage();
+      } else {
+        // ---- TEXT SEND ----
+        const plaintext = text.trim();
+        const ciphertext = await encryptMessage(receiverPublicKey, plaintext);
+        let sender_ciphertext: string | null = null;
+        if (senderPublicKey) sender_ciphertext = await encryptMessage(senderPublicKey, plaintext);
+
+        const { data: msgData, error: insertError } = await supabase
+          .from("messages")
+          .insert({
+            sender_id: currentUserId,
+            receiver_id: receiverId,
+            ciphertext,
+            sender_ciphertext,
+            message_type: "text",
+            reply_to_id: replyTo?.id ?? null,
+            reply_preview: replyPreview,
+          })
+          .select().single();
+
+        if (insertError) throw insertError;
+        if (msgData) onMessageSent({ ...msgData as RawMessage, _plaintext: plaintext });
+        setText("");
       }
 
-      // 2. Fetch sender's own public key (for self-decryption)
-      const { data: senderData } = await supabase
-        .from("users")
-        .select("public_key")
-        .eq("id", currentUserId)
-        .single();
-
-      const receiverPublicKey = JSON.parse(receiverData.public_key);
-
-      // 3. Encrypt with receiver's key (so they can read it)
-      const ciphertext = await encryptMessage(receiverPublicKey, plaintext);
-
-      // 4. Encrypt with sender's own key (so sender can read their own messages)
-      let sender_ciphertext: string | null = null;
-      if (senderData?.public_key) {
-        const senderPublicKey = JSON.parse(senderData.public_key);
-        sender_ciphertext = await encryptMessage(senderPublicKey, plaintext);
-      }
-
-      // 5. Insert into messages table
-      const { data: msgData, error: insertError } = await supabase
-        .from("messages")
-        .insert({
-          sender_id: currentUserId,
-          receiver_id: receiverId,
-          ciphertext,
-          sender_ciphertext,
-        })
-        .select()
-        .single();
-
-      if (insertError) throw insertError;
-
-      // 6. Optimistic update — include plaintext so sender sees it immediately
-      if (msgData) {
-        onMessageSent({ ...msgData, _plaintext: plaintext });
-      }
-
-      setText("");
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Failed to send message";
-      setError(message);
+      if (replyTo) onCancelReply();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send");
     } finally {
       setSending(false);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
   return (
     <div className="message-input-area">
-      {error && (
-        <div
-          className="auth-error"
-          style={{ marginBottom: 8, fontSize: "0.82rem" }}
-        >
-          {error}
+      {error && <div className="auth-error" style={{ marginBottom: 8, fontSize: "0.82rem" }}>{error}</div>}
+
+      {/* Reply bar */}
+      {replyTo && (
+        <div className="reply-bar">
+          <div className="reply-bar-content">
+            <span className="reply-bar-icon">↩</span>
+            <span className="reply-bar-text">
+              {replyTo._plaintext ?? "🔒 Encrypted message"}
+            </span>
+          </div>
+          <button className="reply-bar-close" onClick={onCancelReply}>✕</button>
         </div>
       )}
+
+      {/* Image preview */}
+      {imagePreview && (
+        <div className="image-preview-bar">
+          <img src={imagePreview.previewUrl} alt="Preview" className="image-preview-thumb" />
+          <span className="image-preview-name">{imagePreview.file.name}</span>
+          <button className="reply-bar-close" onClick={cancelImage}>✕</button>
+        </div>
+      )}
+
       <div className="message-input-wrapper">
+        {/* Image attach button */}
+        <button
+          className="attach-btn"
+          onClick={() => fileInputRef.current?.click()}
+          title="Send an image"
+          disabled={sending}
+        >
+          📎
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={handleImageSelect}
+        />
+
         <input
           className="input"
           type="text"
-          placeholder="Type an encrypted message..."
+          placeholder={imagePreview ? "Add a caption..." : "Type an encrypted message..."}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={handleTextChange}
           onKeyDown={handleKeyDown}
+          onBlur={handleBlur}
           disabled={sending}
         />
         <button
           className="send-btn"
           onClick={handleSend}
-          disabled={!text.trim() || sending}
+          disabled={(!text.trim() && !imagePreview) || sending}
           title="Send encrypted message"
         >
           {sending ? "⏳" : "→"}

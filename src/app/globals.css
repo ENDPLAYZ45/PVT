@@ -633,3 +633,105 @@ h4 { font-size: 1.25rem; }
   h1 { font-size: 1.8rem; }
   .chat-header-actions .btn--small { padding: 5px 8px; font-size: 0.7rem; }
 }
+
+/* ---------- Presence / Online Status ---------- */
+.presence-status {
+  text-align: center; font-size: 0.72rem; color: var(--text-muted);
+  padding: 4px 0 8px; display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.online-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green); border: 2px solid var(--border-color);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+.avatar-online-dot {
+  position: absolute; bottom: -2px; right: -2px;
+  width: 11px; height: 11px; border-radius: 50%;
+  background: var(--green); border: 2px solid var(--card-bg);
+}
+.typing-status { color: var(--green); font-size: 0.72rem; font-style: italic; }
+
+/* ---------- Typing Indicator ---------- */
+.typing-indicator {
+  display: flex; align-items: center; gap: 10px;
+  padding: 4px 0; animation: messageSlideIn 0.2s ease;
+}
+.typing-bubble {
+  display: flex; align-items: center; gap: 4px;
+  padding: 10px 14px; background: var(--card-bg);
+  border: 2px solid var(--border-color); border-radius: var(--radius-lg);
+  border-bottom-left-radius: 3px; box-shadow: var(--shadow-sm);
+}
+.typing-bubble span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-muted); display: block;
+  animation: typing-bounce 1.2s ease-in-out infinite;
+}
+.typing-bubble span:nth-child(2) { animation-delay: 0.2s; }
+.typing-bubble span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
+}
+.typing-label { font-size: 0.72rem; color: var(--text-muted); font-style: italic; }
+
+/* ---------- Reply Quote ---------- */
+.reply-quote {
+  font-size: 0.75rem; padding: 4px 10px; margin-bottom: 4px;
+  border-left: 3px solid var(--pink);
+  background: var(--bg-secondary); border-radius: var(--radius);
+  color: var(--text-secondary); max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.reply-quote--sent { border-left-color: var(--blue); }
+[data-theme="dark"] .reply-quote { background: var(--bg-secondary); }
+
+.reply-btn {
+  background: none; border: none; cursor: pointer; font-size: 0.85rem;
+  color: var(--text-muted); padding: 4px; border-radius: 50%;
+  opacity: 0; transition: opacity 0.15s ease, background 0.15s ease;
+  flex-shrink: 0;
+}
+.message-row:hover .reply-btn { opacity: 1; }
+.reply-btn:hover { background: var(--hover-bg); color: var(--text-primary); }
+
+/* ---------- Reply Bar (in input area) ---------- */
+.reply-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 14px; margin-bottom: 8px;
+  background: var(--bg-secondary); border: 2px solid var(--pink);
+  border-radius: var(--radius); animation: popIn 0.15s ease;
+}
+.reply-bar-content { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+.reply-bar-icon { color: var(--pink); font-size: 0.9rem; flex-shrink: 0; }
+.reply-bar-text { font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reply-bar-close { background: none; border: none; cursor: pointer; font-size: 0.85rem; color: var(--text-muted); padding: 2px 6px; flex-shrink: 0; }
+.reply-bar-close:hover { color: var(--red); }
+
+/* ---------- Image Preview Bar ---------- */
+.image-preview-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px; margin-bottom: 8px;
+  background: var(--bg-secondary); border: 2px solid var(--blue);
+  border-radius: var(--radius); animation: popIn 0.15s ease;
+}
+.image-preview-thumb { width: 40px; height: 40px; object-fit: cover; border-radius: var(--radius); border: 2px solid var(--border-color); }
+.image-preview-name { font-size: 0.8rem; color: var(--text-secondary); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- Chat Image ---------- */
+.chat-image { max-width: 260px; max-height: 260px; border-radius: var(--radius); object-fit: cover; display: block; cursor: pointer; }
+@media (max-width: 768px) { .chat-image { max-width: 180px; max-height: 180px; } }
+
+/* ---------- Attach Button ---------- */
+.attach-btn {
+  background: var(--card-bg); border: 2px solid var(--border-color);
+  border-radius: var(--radius); padding: 8px 10px; cursor: pointer;
+  font-size: 1rem; flex-shrink: 0;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  box-shadow: var(--shadow-sm);
+}
+.attach-btn:hover { transform: translate(2px,2px); box-shadow: var(--shadow-hover); }
+
+/* ---------- Seen Receipt ---------- */
+.seen-receipt { font-size: 0.65rem; color: var(--blue); font-weight: 600; }
+
