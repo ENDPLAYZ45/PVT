@@ -5,10 +5,11 @@ import { NextResponse, type NextRequest } from "next/server";
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/";
+  const next = searchParams.get("next") ?? "/chat";
 
   if (code) {
     const cookieStore = await cookies();
+    const response = NextResponse.redirect(`${origin}${next}`);
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,9 +19,10 @@ export async function GET(request: NextRequest) {
           getAll() {
             return cookieStore.getAll();
           },
+          // Write cookies onto the redirect response — not onto the read-only cookieStore
           setAll(cookiesToSet) {
             cookiesToSet.forEach(({ name, value, options }) => {
-              cookieStore.set(name, value, options);
+              response.cookies.set(name, value, options);
             });
           },
         },
@@ -30,10 +32,13 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
-      return NextResponse.redirect(`${origin}${next}`);
+      return response;
     }
+
+    // Log the error detail to help debug
+    console.error("[auth/callback] exchangeCodeForSession error:", error.message);
   }
 
-  // If something went wrong, send to login with error
+  // Fallback — redirect to login with error query
   return NextResponse.redirect(`${origin}/login?error=link_expired`);
 }
