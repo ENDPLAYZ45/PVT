@@ -236,14 +236,22 @@ h4 { font-size: 1.25rem; }
 }
 
 /* ---------- App Layout ---------- */
-.app-layout { display: flex; height: 100vh; overflow: hidden; }
+.app-layout {
+  display: flex;
+  height: 100vh;
+  height: 100dvh; /* dynamic viewport — adjusts when keyboard opens */
+  overflow: hidden;
+}
 
 /* ---------- Sidebar ---------- */
 .sidebar {
   width: var(--sidebar-width); min-width: var(--sidebar-width);
   background: var(--sidebar-bg);
   border-right: var(--border-width) solid var(--border-color);
-  display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+  display: flex; flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   transition: background-color 0.3s ease;
 }
 .sidebar-header {
@@ -297,7 +305,9 @@ h4 { font-size: 1.25rem; }
 /* ---------- Chat Area ---------- */
 .chat-area {
   flex: 1; display: flex; flex-direction: column;
-  height: 100vh; overflow: hidden; background: var(--bg-chat);
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden; background: var(--bg-chat);
   transition: background-color 0.3s ease;
 }
 .chat-header {
@@ -889,7 +899,7 @@ h4 { font-size: 1.25rem; }
 .mobile-back-btn:hover { color: var(--yellow); }
 
 /* Sidebar panel wrapper */
-.sidebar-panel { display: flex; height: 100vh; }
+.sidebar-panel { display: flex; height: 100vh; height: 100dvh; }
 .chat-area--hidden-mobile { display: flex; } /* always visible on desktop */
 
 /* ===== TABLET (768px – 1024px) ===== */
@@ -916,11 +926,13 @@ h4 { font-size: 1.25rem; }
 
   /* Sidebar panel: full width on mobile */
   .sidebar-panel {
-    width: 100vw; height: 100vh;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
     transition: transform 0.3s ease;
   }
   .sidebar-panel--hidden-mobile {
-    display: none; /* hide when chat is open */
+    display: none;
   }
 
   /* Sidebar itself: full width */
@@ -932,14 +944,20 @@ h4 { font-size: 1.25rem; }
   .conversation-item { padding: 14px 16px; }
   .conversation-avatar { width: 46px; height: 46px; min-width: 46px; font-size: 1rem; }
 
-  /* Chat area: full width on mobile, hidden when no chat */
+  /* Chat area: full screen on mobile using dvh */
   .chat-area {
-    position: fixed; inset: 0; z-index: 10;
-    width: 100vw; height: 100vh;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 10;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh; /* adjusts when keyboard opens */
     background: var(--bg-chat);
     display: flex; flex-direction: column;
     transform: translateX(100%);
     transition: transform 0.3s ease;
+    /* iOS safe area for notch/home bar */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   /* When a chat IS open, slide it in */
   .app-layout:has(.chat-area:not(.chat-area--hidden-mobile)) .chat-area {
