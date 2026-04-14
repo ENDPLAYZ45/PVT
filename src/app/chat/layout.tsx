@@ -1,19 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { useParams } from "next/navigation";
 import { useSupabaseUser } from "@/hooks/useSupabaseUser";
 import { useConversations } from "@/hooks/useConversations";
 import ChatSidebar from "@/components/ChatSidebar";
 import KeyWarningBanner from "@/components/KeyWarningBanner";
 
-export default function ChatLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function ChatLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useSupabaseUser();
   const { conversations } = useConversations(user?.id);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const params = useParams();
+  const hasActiveChat = !!params?.userId; // true when a conversation is open
 
   if (loading) {
     return (
@@ -29,34 +28,30 @@ export default function ChatLayout({
     <>
       <KeyWarningBanner />
       <div className="app-layout">
-        <ChatSidebar
-          conversations={conversations}
-          currentUserId={user.id}
-          isOpen={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
-        />
-        <div className="chat-area" style={{ overflowY: "auto" }}>
-          <div style={{ display: "none" }}>
+        {/* Sidebar — hidden on mobile when a chat is open */}
+        <div className={`sidebar-panel ${hasActiveChat ? "sidebar-panel--hidden-mobile" : ""} ${sidebarOpen ? "sidebar-panel--open" : ""}`}>
+          <ChatSidebar
+            conversations={conversations}
+            currentUserId={user.id}
+            isOpen={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+          />
+        </div>
+
+        {/* Chat area — hidden on mobile when NO chat is open */}
+        <div className={`chat-area ${!hasActiveChat ? "chat-area--hidden-mobile" : ""}`} style={{ overflowY: "auto" }}>
+          {/* Mobile back button — shown inside chat header via CSS class */}
+          <div className="mobile-back-bar">
             <button
-              className="mobile-menu-btn"
-              onClick={() => setSidebarOpen(true)}
-              style={{ display: "block", position: "fixed", top: 16, left: 16, zIndex: 48 }}
+              className="mobile-back-btn"
+              onClick={() => window.history.back()}
             >
-              ☰
+              ← Back
             </button>
           </div>
           {children}
         </div>
       </div>
-
-      {/* Mobile menu button */}
-      <button
-        className="mobile-menu-btn"
-        onClick={() => setSidebarOpen(true)}
-        style={{ position: "fixed", top: 16, left: 16, zIndex: 48 }}
-      >
-        ☰
-      </button>
     </>
   );
 }

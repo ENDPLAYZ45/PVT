@@ -617,22 +617,154 @@ h4 { font-size: 1.25rem; }
 ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; opacity: 0.5; }
 [data-theme="dark"] ::-webkit-scrollbar-thumb { background: #444; }
 
-/* ---------- Responsive ---------- */
+/* ---------- Responsive Base ---------- */
 .mobile-menu-btn { display: none; background: var(--card-bg); border: var(--border-width) solid var(--border-color); font-size: 1.3rem; cursor: pointer; padding: 6px 10px; border-radius: var(--radius); }
 .sidebar-overlay { display: none; }
 
-@media (max-width: 768px) {
-  :root { --sidebar-width: 300px; }
-  .sidebar { position: fixed; left: -100%; top: 0; z-index: 50; transition: left 0.3s ease; height: 100vh; }
-  .sidebar--open { left: 0; box-shadow: var(--shadow-lg); }
-  .sidebar-overlay { display: block; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 49; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
-  .sidebar-overlay--visible { opacity: 1; pointer-events: auto; }
-  .mobile-menu-btn { display: block; }
-  .message-row { max-width: 88%; }
-  .auth-card .card { padding: 24px; }
-  h1 { font-size: 1.8rem; }
-  .chat-header-actions .btn--small { padding: 5px 8px; font-size: 0.7rem; }
+/* Mobile back bar — hidden on desktop */
+.mobile-back-bar { display: none; }
+.mobile-back-btn {
+  background: none; border: none; cursor: pointer;
+  font-family: var(--font-heading); font-weight: 600; font-size: 0.9rem;
+  color: var(--text-primary); padding: 10px 16px; display: flex; align-items: center; gap: 6px;
 }
+.mobile-back-btn:hover { color: var(--yellow); }
+
+/* Sidebar panel wrapper */
+.sidebar-panel { display: flex; height: 100vh; }
+.chat-area--hidden-mobile { display: flex; } /* always visible on desktop */
+
+/* ===== TABLET (768px – 1024px) ===== */
+@media (max-width: 1024px) {
+  :root { --sidebar-width: 280px; }
+
+  .chat-header { padding: 10px 14px; }
+  .chat-header-info h3 { font-size: 0.92rem; }
+  .chat-header-actions { gap: 4px; }
+  .chat-header-actions .btn--small { padding: 6px 10px; font-size: 0.72rem; }
+  .panic-btn { padding: 6px 10px; font-size: 0.72rem; }
+
+  .message-row { max-width: 80%; }
+  .messages-container { padding: 16px; gap: 8px; }
+  .settings-page { padding: 20px; }
+}
+
+/* ===== MOBILE (≤ 768px) ===== */
+@media (max-width: 768px) {
+  :root { --sidebar-width: 100vw; --header-height: 56px; }
+
+  /* App layout: stack panels (only one visible at a time) */
+  .app-layout { position: relative; overflow: hidden; }
+
+  /* Sidebar panel: full width on mobile */
+  .sidebar-panel {
+    width: 100vw; height: 100vh;
+    transition: transform 0.3s ease;
+  }
+  .sidebar-panel--hidden-mobile {
+    display: none; /* hide when chat is open */
+  }
+
+  /* Sidebar itself: full width */
+  .sidebar { width: 100vw; min-width: 100vw; border-right: none; }
+  .sidebar-header { padding: 12px 14px; }
+  .sidebar-header h2 { font-size: 1.1rem; }
+
+  /* Conversation items: larger touch targets */
+  .conversation-item { padding: 14px 16px; }
+  .conversation-avatar { width: 46px; height: 46px; min-width: 46px; font-size: 1rem; }
+
+  /* Chat area: full width on mobile, hidden when no chat */
+  .chat-area {
+    position: fixed; inset: 0; z-index: 10;
+    width: 100vw; height: 100vh;
+    background: var(--bg-chat);
+    display: flex; flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.3s ease;
+  }
+  /* When a chat IS open, slide it in */
+  .app-layout:has(.chat-area:not(.chat-area--hidden-mobile)) .chat-area {
+    transform: translateX(0);
+  }
+  /* Simpler: always show chat-area when it's not hidden */
+  .chat-area:not(.chat-area--hidden-mobile) { transform: translateX(0); }
+  .chat-area--hidden-mobile { transform: translateX(100%); pointer-events: none; }
+
+  /* Mobile back button */
+  .mobile-back-bar {
+    display: flex; align-items: center;
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+  }
+
+  /* Chat header */
+  .chat-header {
+    padding: 8px 12px;
+    min-height: var(--header-height);
+    flex-shrink: 0;
+  }
+  .chat-header-info h3 { font-size: 0.88rem; }
+  .chat-header-user { gap: 8px; }
+  .conversation-avatar { width: 36px; height: 36px; min-width: 36px; font-size: 0.8rem; }
+
+  /* Header actions — compact on mobile */
+  .chat-header-actions { gap: 3px; }
+  .chat-header-actions .btn--small {
+    padding: 5px 8px; font-size: 0;  /* hide text, show only emoji */
+    min-width: 34px; min-height: 34px;
+  }
+  .chat-header-actions .btn--small::before { font-size: 0.9rem; }
+  .panic-btn { padding: 5px 8px; font-size: 0; min-width: 34px; min-height: 34px; }
+  .panic-btn .panic-btn-dot { display: block; }
+
+  /* Messages */
+  .messages-container { padding: 12px 10px; gap: 6px; }
+  .message-row { max-width: 88%; }
+  .message-bubble { padding: 8px 13px; font-size: 0.88rem; }
+  .chat-image { max-width: 200px; max-height: 200px; }
+
+  /* Input area */
+  .message-input-area { padding: 10px 12px; }
+  .message-input-wrapper .input { min-height: 42px; max-height: 42px; font-size: 0.9rem; }
+  .send-btn { width: 42px; height: 42px; min-width: 42px; }
+  .attach-btn { padding: 6px 8px; }
+
+  /* Auth */
+  .auth-card .card { padding: 24px 20px; }
+  h1 { font-size: 1.7rem; }
+
+  /* Confirm dialog */
+  .confirm-dialog { padding: 24px 20px; }
+  .confirm-actions { flex-direction: column; }
+  .confirm-actions .btn { width: 100%; min-width: unset; }
+
+  /* Settings */
+  .settings-page { padding: 16px; max-width: 100%; }
+  .settings-row { flex-wrap: wrap; }
+
+  /* Sidebar overlay (for legacy, not needed with panel design) */
+  .sidebar-overlay { display: none; }
+  .mobile-menu-btn { display: none; }
+
+  /* Search modal */
+  .search-overlay { padding-top: 40px; padding-left: 8px; padding-right: 8px; }
+  .search-modal { max-width: 100%; }
+
+  /* Typing indicator */
+  .typing-label { display: none; }
+}
+
+/* ===== SMALL PHONES (≤ 380px) ===== */
+@media (max-width: 380px) {
+  .message-row { max-width: 94%; }
+  .chat-image { max-width: 160px; max-height: 160px; }
+  .chat-header-actions .btn--small { min-width: 30px; min-height: 30px; padding: 4px 6px; }
+  .confirm-dialog { padding: 20px 16px; }
+}
+
+
 
 /* ---------- Presence / Online Status ---------- */
 .presence-status {
