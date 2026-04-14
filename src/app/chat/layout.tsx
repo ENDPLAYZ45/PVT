@@ -35,7 +35,7 @@ export default function ChatLayout({
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
         />
-        <div className="chat-area">
+        <div className="chat-area" style={{ overflowY: "auto" }}>
           <div style={{ display: "none" }}>
             <button
               className="mobile-menu-btn"
@@ -48,6 +48,7 @@ export default function ChatLayout({
           {children}
         </div>
       </div>
+
       {/* Mobile menu button */}
       <button
         className="mobile-menu-btn"
