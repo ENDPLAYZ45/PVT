@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import UserSearch from "./UserSearch";
 import { createClient } from "@/lib/supabase/client";
+import ThemeToggle from "./ThemeToggle";
+
 
 const AVATAR_COLORS = [
   "conversation-avatar--yellow",
@@ -74,6 +76,7 @@ export default function ChatSidebar({
             <span>🔐</span> PVT
           </h2>
           <div style={{ display: "flex", gap: 6 }}>
+            <ThemeToggle />
             <button
               className="btn btn--small btn--secondary"
               onClick={() => setShowSearch(true)}
@@ -96,6 +99,7 @@ export default function ChatSidebar({
               ↗
             </button>
           </div>
+
         </div>
 
         <div className="sidebar-conversations">
