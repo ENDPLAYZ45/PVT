@@ -1125,3 +1125,83 @@ h4 { font-size: 1.25rem; }
 /* ---------- Seen Receipt ---------- */
 .seen-receipt { font-size: 0.65rem; color: var(--blue); font-weight: 600; }
 
+/* ================================================
+   CONVERSATION LAYOUT — fixed column
+   ================================================ */
+.conversation-layout {
+  display: flex; flex-direction: column;
+  height: 100%; overflow: hidden;
+}
+.conversation-messages {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-direction: column;
+}
+.conversation-input {
+  flex-shrink: 0;
+  border-top: var(--border-width) solid var(--border-color);
+  background: var(--card-bg);
+}
+
+/* ── 3-dots header menu ── */
+.header-menu-wrap { position: relative; }
+.header-menu-btn {
+  background: var(--card-bg); border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius); width: 36px; height: 36px;
+  font-size: 1.3rem; font-weight: 700; line-height: 1;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  color: var(--text-primary); box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+.header-menu-btn:hover { transform: translate(2px,2px); box-shadow: var(--shadow-hover); }
+
+.header-dropdown {
+  position: absolute; top: calc(100% + 6px); right: 0;
+  min-width: 180px; z-index: 100;
+  background: var(--card-bg); border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+  overflow: hidden; animation: popIn 0.15s ease;
+}
+.header-dropdown-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; font-size: 0.88rem; font-weight: 500;
+  color: var(--text-primary); cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.header-dropdown-item:hover { background: var(--hover-bg); }
+.header-dropdown-item--danger { color: var(--red); }
+.header-dropdown-item--danger:hover { background: rgba(239,68,68,0.08); }
+.header-dropdown-divider { height: 1px; background: var(--border-color); opacity: 0.2; }
+.header-dropdown-item--block { padding: 0; }
+.header-dropdown-item--block > div { width: 100%; }
+
+/* ── Auth extras ── */
+.auth-success {
+  background: var(--lime); border: var(--border-width) solid var(--border-color);
+  padding: 10px 14px; border-radius: var(--radius); font-size: 0.85rem;
+  font-weight: 600; color: var(--text-primary); margin-bottom: 14px;
+}
+.forgot-link {
+  background: none; border: none; cursor: pointer;
+  font-size: 0.8rem; color: var(--blue); font-weight: 600;
+  text-decoration: underline; padding: 0;
+}
+.forgot-link:hover { color: var(--text-primary); }
+.btn--ghost {
+  background: transparent; border: var(--border-width) solid var(--border-color);
+  color: var(--text-primary); padding: 10px 20px; width: 100%;
+  font-family: var(--font-heading); font-weight: 600; font-size: 0.88rem;
+  border-radius: var(--radius); cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.btn--ghost:hover { background: var(--hover-bg); }
+
+/* ── Mobile tweaks ── */
+@media (max-width: 768px) {
+  .conversation-layout { height: 100vh; }
+  .conversation-messages { -webkit-overflow-scrolling: touch; }
+  .header-dropdown { right: 0; min-width: 160px; }
+  .header-dropdown-item { padding: 14px 16px; font-size: 0.92rem; }
+}
+@media (max-width: 380px) {
+  .header-menu-btn { width: 30px; height: 30px; font-size: 1rem; }
+}

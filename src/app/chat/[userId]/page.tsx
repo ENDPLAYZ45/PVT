@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSupabaseUser } from "@/hooks/useSupabaseUser";
 import { usePrivateKey } from "@/hooks/usePrivateKey";
@@ -37,6 +37,8 @@ export default function ConversationPage() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [replyTo, setReplyTo] = useState<RawMessage | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!partnerId) return;
@@ -48,6 +50,17 @@ export default function ConversationPage() {
     fetchPartner();
   }, [partnerId]);
 
+  // Close menu on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
   const handleClearChat = async () => {
     if (!user?.id || clearing) return;
     setClearing(true);
@@ -57,18 +70,20 @@ export default function ConversationPage() {
     clearMessages();
     setClearing(false);
     setShowClearConfirm(false);
+    setMenuOpen(false);
   };
 
   if (!user) return null;
 
   return (
-    <>
-      {/* Chat Header */}
+    /* Fixed flex column — header + messages (scroll) + input (fixed bottom) */
+    <div className="conversation-layout">
+      {/* ── Chat Header ── */}
       <div className="chat-header">
         <div className="chat-header-user">
           <div style={{ position: "relative" }}>
             <div className={`conversation-avatar ${getAvatarColor(partnerId)}`}>
-              {partnerName ? partnerName.slice(0, 2) : ".."}
+              {partnerName ? partnerName.slice(0, 2).toUpperCase() : ".."}
             </div>
             {partnerPresence.isOnline && <span className="avatar-online-dot" />}
           </div>
@@ -76,21 +91,43 @@ export default function ConversationPage() {
             <h3>{partnerName || "Loading..."}</h3>
             <div className="chat-header-status">
               {partnerPresence.isTyping
-                ? <span className="typing-status">typing...</span>
+                ? <span className="typing-status">✍️ typing...</span>
                 : <EncryptionBadge />}
             </div>
           </div>
         </div>
+
         <div className="chat-header-actions">
+          {/* SOS always visible */}
           <PanicButton currentUserId={user.id} partnerId={partnerId} />
-          <button className="btn btn--small btn--danger" onClick={() => setShowClearConfirm(true)} title="Clear chat">
-            🗑️
-          </button>
-          <BlockButton targetUserId={partnerId} currentUserId={user.id} />
+
+          {/* 3-dots menu */}
+          <div className="header-menu-wrap" ref={menuRef}>
+            <button
+              className="header-menu-btn"
+              onClick={() => setMenuOpen((o) => !o)}
+              title="More options"
+              aria-label="More options"
+            >
+              ⋮
+            </button>
+
+            {menuOpen && (
+              <div className="header-dropdown">
+                <div className="header-dropdown-item" onClick={() => { setShowClearConfirm(true); setMenuOpen(false); }}>
+                  <span>🗑️</span> Clear Chat
+                </div>
+                <div className="header-dropdown-divider" />
+                <div className="header-dropdown-item--block">
+                  <BlockButton targetUserId={partnerId} currentUserId={user.id} inMenu />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Clear Chat Confirm */}
+      {/* ── Clear Chat Confirm ── */}
       {showClearConfirm && (
         <div className="confirm-overlay" onClick={() => setShowClearConfirm(false)}>
           <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
@@ -100,37 +137,41 @@ export default function ConversationPage() {
             <div className="confirm-actions">
               <button className="btn btn--secondary" onClick={() => setShowClearConfirm(false)} disabled={clearing}>Cancel</button>
               <button className="btn btn--danger" onClick={handleClearChat} disabled={clearing}>
-                {clearing ? "Clearing..." : "Yes, Clear Chat"}
+                {clearing ? "Clearing..." : "Yes, Clear"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Messages */}
-      {loading ? (
-        <div className="loading-center"><div className="spinner" /></div>
-      ) : (
-        <ChatWindow
-          messages={messages}
-          currentUserId={user.id}
-          privateKey={privateKey}
-          hasKey={hasKey}
-          partnerPresence={partnerPresence}
-          partnerName={partnerName}
-          onReply={setReplyTo}
-        />
-      )}
+      {/* ── Messages (scrollable middle) ── */}
+      <div className="conversation-messages">
+        {loading ? (
+          <div className="loading-center"><div className="spinner" /></div>
+        ) : (
+          <ChatWindow
+            messages={messages}
+            currentUserId={user.id}
+            privateKey={privateKey}
+            hasKey={hasKey}
+            partnerPresence={partnerPresence}
+            partnerName={partnerName}
+            onReply={setReplyTo}
+          />
+        )}
+      </div>
 
-      {/* Input */}
-      <MessageInput
-        receiverId={partnerId}
-        currentUserId={user.id}
-        onMessageSent={addOptimisticMessage}
-        onTyping={sendTyping}
-        replyTo={replyTo}
-        onCancelReply={() => setReplyTo(null)}
-      />
-    </>
+      {/* ── Input (fixed bottom) ── */}
+      <div className="conversation-input">
+        <MessageInput
+          receiverId={partnerId}
+          currentUserId={user.id}
+          onMessageSent={addOptimisticMessage}
+          onTyping={sendTyping}
+          replyTo={replyTo}
+          onCancelReply={() => setReplyTo(null)}
+        />
+      </div>
+    </div>
   );
 }

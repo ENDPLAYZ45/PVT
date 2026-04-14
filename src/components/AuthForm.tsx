@@ -19,8 +19,11 @@ export default function AuthForm({ mode }: AuthFormProps) {
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -115,6 +118,57 @@ export default function AuthForm({ mode }: AuthFormProps) {
     }
   };
 
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+    setLoading(true);
+    const supabase = createClient();
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    setLoading(false);
+    if (resetError) { setError(resetError.message); return; }
+    setSuccess("✅ Reset link sent! Check your email inbox.");
+  };
+
+  // ── Forgot Password View ──
+  if (forgotMode) {
+    return (
+      <form className="auth-form" onSubmit={handleForgotPassword}>
+        <h2 style={{ marginBottom: 4 }}>Reset Password</h2>
+        <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: 16 }}>
+          Enter your email and we'll send a reset link.
+        </p>
+        {error && <div className="auth-error">⚠ {error}</div>}
+        {success && <div className="auth-success">✅ {success}</div>}
+        <div className="input-group">
+          <label htmlFor="forgot-email">Email</label>
+          <input
+            id="forgot-email"
+            className="input"
+            type="email"
+            placeholder="you@example.com"
+            value={forgotEmail}
+            onChange={(e) => setForgotEmail(e.target.value)}
+            required
+          />
+        </div>
+        <button type="submit" className="btn btn--primary btn--full" disabled={loading}>
+          {loading ? "Sending..." : "Send Reset Link"}
+        </button>
+        <button
+          type="button"
+          className="btn btn--ghost btn--full"
+          style={{ marginTop: 8 }}
+          onClick={() => { setForgotMode(false); setError(""); setSuccess(""); }}
+        >
+          ← Back to Sign In
+        </button>
+      </form>
+    );
+  }
+
   return (
     <form className="auth-form" onSubmit={handleSubmit}>
       {error && <div className="auth-error">⚠ {error}</div>}
@@ -178,9 +232,18 @@ export default function AuthForm({ mode }: AuthFormProps) {
       </button>
 
       {mode === "login" && (
-        <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", textAlign: "center" }}>
-          🔑 Your encryption key is restored from your password — messages are accessible on all devices.
-        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
+          <button
+            type="button"
+            className="forgot-link"
+            onClick={() => { setForgotMode(true); setForgotEmail(email); setError(""); }}
+          >
+            Forgot password?
+          </button>
+          <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", textAlign: "center" }}>
+            🔑 Key restored from password — messages accessible on all devices.
+          </p>
+        </div>
       )}
     </form>
   );
