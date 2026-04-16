@@ -93,18 +93,46 @@ export default function AuthForm({ mode }: AuthFormProps) {
             .eq("id", data.user.id)
             .single();
 
-          if (fetchErr || !userData?.encrypted_private_key) {
-            throw new Error("Could not restore encryption key. Please contact support.");
+          let restoredKey: CryptoKey | null = null;
+
+          if (!fetchErr && userData?.encrypted_private_key) {
+            try {
+              // Decrypt the private key using the password
+              restoredKey = await decryptPrivateKeyWithPassword(
+                userData.encrypted_private_key,
+                password
+              );
+            } catch (err) {
+              console.warn("Could not decrypt old private key (likely password reset). Generating a new one.");
+            }
           }
 
-          // Decrypt the private key using the password
-          const restoredKey = await decryptPrivateKeyWithPassword(
-            userData.encrypted_private_key,
-            password
-          );
+          if (restoredKey) {
+            // Store restored key in IndexedDB
+            await storePrivateKey(data.user.id, restoredKey);
+          } else {
+            // User either lacked an encrypted key (legacy) or decryption failed (password changed).
+            // Rotate the key pair automatically to restore account access.
+            setLoadingMsg("🔑 Generating new encryption keys...");
+            
+            const { publicKeyJwk, privateKey: newPrivKey, extractablePrivateKey } = await generateKeyPair();
+            const encryptedPriv = await encryptPrivateKeyWithPassword(
+              extractablePrivateKey,
+              password
+            );
 
-          // Store restored key in IndexedDB
-          await storePrivateKey(data.user.id, restoredKey);
+            const { error: updateErr } = await supabase
+              .from("users")
+              .update({
+                public_key: publicKeyJwk,
+                encrypted_private_key: encryptedPriv,
+              })
+              .eq("id", data.user.id);
+
+            if (updateErr) throw new Error("Failed to save new encryption keys. Please contact support.");
+            
+            await storePrivateKey(data.user.id, newPrivKey);
+          }
         }
 
         router.push("/chat");
