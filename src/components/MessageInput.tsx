@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/client";
 import { encryptMessage } from "@/lib/crypto/encrypt";
 import { encryptImageForUpload } from "@/lib/crypto/imageEncrypt";
 import { RawMessage } from "@/hooks/useRealtimeMessages";
+import { storage } from "@/lib/firebase/client";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 interface MessageInputProps {
   receiverId: string;
@@ -89,20 +91,12 @@ export default function MessageInput({
         const { encryptedBlob, ivBase64, aesKeyForReceiver, aesKeyForSender, mimeType } =
           await encryptImageForUpload(imagePreview.file, receiverPublicKey, senderPublicKey);
 
-        // Upload encrypted blob to Supabase Storage
+        // Upload encrypted blob to Firebase Storage
         const fileName = `${currentUserId}/${Date.now()}.enc`;
-        const { error: uploadError } = await supabase.storage
-          .from("chat-media")
-          .upload(fileName, encryptedBlob, { contentType: "application/octet-stream" });
-
-        if (uploadError) throw new Error("Upload failed: " + uploadError.message);
-
-        // Generate a long-lived signed URL (1 year) — bucket is private, only auth users can access
-        const { data: signedData, error: signErr } = await supabase.storage
-          .from("chat-media")
-          .createSignedUrl(fileName, 60 * 60 * 24 * 365); // 1 year
-
-        if (signErr || !signedData?.signedUrl) throw new Error("Could not generate signed URL");
+        const storageRef = ref(storage, `chat-media/${fileName}`);
+        
+        await uploadBytes(storageRef, encryptedBlob, { contentType: "application/octet-stream" });
+        const downloadUrl = await getDownloadURL(storageRef);
 
         const { data: msgData, error: insertError } = await supabase
           .from("messages")
@@ -112,7 +106,7 @@ export default function MessageInput({
             ciphertext: "__IMAGE__",
             sender_ciphertext: "__IMAGE__",
             message_type: "image",
-            image_url: signedData.signedUrl,
+            image_url: downloadUrl,
 
             image_aes_key: aesKeyForReceiver,
             image_aes_key_sender: aesKeyForSender,

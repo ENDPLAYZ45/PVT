@@ -5,6 +5,8 @@ import { useSupabaseUser } from "@/hooks/useSupabaseUser";
 import { usePrivateKey } from "@/hooks/usePrivateKey";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { storage } from "@/lib/firebase/client";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 export default function SettingsPage() {
   const { user, loading: userLoading } = useSupabaseUser();
@@ -60,17 +62,19 @@ export default function SettingsPage() {
     const supabase = createClient();
     const fileExt = file.name.split('.').pop() || 'png';
     const filePath = `${user.id}/${type}-${Date.now()}.${fileExt}`;
+    const storageRef = ref(storage, filePath);
     
-    // Upload image to user-assets
-    const { error: uploadError } = await supabase.storage.from("user-assets").upload(filePath, file);
-    if (uploadError) {
+    // Upload image to Firebase Storage
+    try {
+      await uploadBytes(storageRef, file);
+    } catch (uploadError) {
       alert(`Error uploading ${type}`);
       setSaving(false);
       return;
     }
     
     // Get public URL
-    const { data: { publicUrl } } = supabase.storage.from("user-assets").getPublicUrl(filePath);
+    const publicUrl = await getDownloadURL(storageRef);
     
     // Save URL to users table
     await supabase.from("users").update({ avatar_url: publicUrl }).eq("id", user.id);
