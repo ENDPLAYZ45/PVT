@@ -79,7 +79,7 @@ export default function ChatWindow({
             const objectUrl = await decryptImageBlob(encryptedData, aesKeyString, msg.image_iv, msg.image_mime || "image/jpeg");
             results.push({ ...msg, plaintext: "[Image]", decryptFailed: false, isPanic: false, imageObjectUrl: objectUrl });
           } catch {
-            results.push({ ...msg, plaintext: "🖼️ Image (failed to decrypt)", decryptFailed: true, isPanic: false });
+            // Hide old images that cannot be decrypted due to key rotation
           }
           continue;
         }
@@ -91,10 +91,10 @@ export default function ChatWindow({
               const plaintext = await decryptMessage(privateKey, msg.sender_ciphertext);
               results.push({ ...msg, plaintext, decryptFailed: false, isPanic: false });
             } catch {
-              results.push({ ...msg, plaintext: "🔒 Sent (encrypted)", decryptFailed: false, isPanic: false });
+              // Hide old messages that cannot be decrypted
             }
           } else {
-            results.push({ ...msg, plaintext: "🔒 Sent (encrypted)", decryptFailed: false, isPanic: false });
+            // Hide messages if no private key is available to decrypt sender copy
           }
         } else {
           if (privateKey) {
@@ -102,10 +102,10 @@ export default function ChatWindow({
               const plaintext = await decryptMessage(privateKey, msg.ciphertext);
               results.push({ ...msg, plaintext, decryptFailed: false, isPanic: false });
             } catch {
-              results.push({ ...msg, plaintext: "⚠️ Unable to decrypt", decryptFailed: true, isPanic: false });
+              // Hide unreadable messages
             }
           } else {
-            results.push({ ...msg, plaintext: "🔑 No private key", decryptFailed: true, isPanic: false });
+            // Hide if no private key is available
           }
         }
       }
