@@ -16,6 +16,7 @@ export function useWebRTC(currentUserId: string | undefined, partnerId: string |
   
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const iceCandidateBufferRef = useRef<RTCIceCandidateInit[]>([]);
   
 
   const stopMediaTracks = useCallback((stream: MediaStream | null) => {
@@ -29,6 +30,7 @@ export function useWebRTC(currentUserId: string | undefined, partnerId: string |
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
     }
+    iceCandidateBufferRef.current = [];
     
     setLocalStream((current) => {
         stopMediaTracks(current);
@@ -48,12 +50,19 @@ export function useWebRTC(currentUserId: string | undefined, partnerId: string |
     if (!currentUserId || !partnerId) return;
     const supabase = createClient();
     const conversationId = [currentUserId, partnerId].sort().join("_");
-    const channel = supabase.channel(`webrtc:${conversationId}`);
+    const channel = supabase.channel(`webrtc:${conversationId}`, {
+      config: { broadcast: { ack: true } }
+    });
     
     const trySetRemoteDescription = async (sdp: RTCSessionDescriptionInit) => {
         if (!peerConnectionRef.current) return;
         try {
             await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+            // Flush buffered ICE candidates
+            for (const candidate of iceCandidateBufferRef.current) {
+                await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate)).catch(err => console.error("Buffered ICE error", err));
+            }
+            iceCandidateBufferRef.current = [];
         } catch (e) {
             console.error("Failed to set remote description", e);
         }
@@ -81,10 +90,14 @@ export function useWebRTC(currentUserId: string | undefined, partnerId: string |
 
         case "ice-candidate":
           if (peerConnectionRef.current) {
-            try {
-               await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate));
-            } catch (e) {
-               console.error("Failed adding ICE candidate", e);
+            if (peerConnectionRef.current.remoteDescription && peerConnectionRef.current.remoteDescription.type) {
+              try {
+                 await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate));
+              } catch (e) {
+                 console.error("Failed adding ICE candidate", e);
+              }
+            } else {
+              iceCandidateBufferRef.current.push(payload.candidate);
             }
           }
           break;
@@ -141,7 +154,7 @@ export function useWebRTC(currentUserId: string | undefined, partnerId: string |
   const getMedia = async (isVideo: boolean) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: isVideo ? { width: { ideal: 1280 }, height: { ideal: 720 } } : false,
+        video: isVideo ? { facingMode: "user" } : false,
         audio: true,
       });
       setLocalStream(stream);
