@@ -189,13 +189,14 @@ export default function ChatWindow({
                 )}
                 <div
                   className={`message-bubble ${isSent ? "message-bubble--sent" : "message-bubble--received"}`}
-                  style={msg.decryptFailed ? { opacity: 0.6 } : undefined}
+                  style={{ minWidth: 0, wordBreak: "break-word", ...(msg.decryptFailed ? { opacity: 0.6 } : {}) }}
                 >
                   {msg.imageObjectUrl ? (
                     <img
                       src={msg.imageObjectUrl}
                       alt="Encrypted image"
                       className="chat-image"
+                      style={{ maxWidth: "100%", maxHeight: "350px", objectFit: "scale-down", borderRadius: "6px", display: "block", margin: "5px 0" }}
                       onLoad={() => {}}
                     />
                   ) : (
