@@ -1,11 +1,11 @@
 {
+  "id": "/",
   "name": "PVT — Private Encrypted Chat",
   "short_name": "PVT",
   "description": "End-to-end encrypted private messaging. Your messages, your keys, your privacy.",
-  "start_url": "/chat",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "background_color": "#0a0a0a",
   "theme_color": "#0a0a0a",
   "orientation": "portrait-primary",
@@ -40,5 +40,9 @@
     }
   ],
   "categories": ["social", "communication"],
-  "prefer_related_applications": false
+  "prefer_related_applications": false,
+  "iarc_rating_id": "",
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  }
 }

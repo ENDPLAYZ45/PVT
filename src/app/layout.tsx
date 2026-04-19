@@ -39,6 +39,16 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="PVT" />
+        {/* Register service worker on every page — required for PWA detection */}
+        <script dangerouslySetInnerHTML={{ __html: `
+          if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+              navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                .then(function(r) { console.log('[SW] Registered:', r.scope); })
+                .catch(function(e) { console.warn('[SW] Registration failed:', e); });
+            });
+          }
+        ` }} />
       </head>
       <body>
         <ThemeProvider>{children}</ThemeProvider>
