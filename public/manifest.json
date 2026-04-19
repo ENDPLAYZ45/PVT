@@ -1,5 +1,5 @@
 {
-  "id": "/",
+  "id": "app.pvt.chat",
   "name": "PVT — Private Encrypted Chat",
   "short_name": "PVT",
   "description": "End-to-end encrypted private messaging. Your messages, your keys, your privacy.",
@@ -31,6 +31,22 @@
       "purpose": "maskable"
     }
   ],
+  "screenshots": [
+    {
+      "src": "/screenshots/desktop.png",
+      "sizes": "1280x800",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "PVT Desktop Login"
+    },
+    {
+      "src": "/screenshots/mobile.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "PVT Mobile Login"
+    }
+  ],
   "shortcuts": [
     {
       "name": "Open Chats",
@@ -39,9 +55,16 @@
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ],
-  "categories": ["social", "communication"],
+  "categories": ["social", "communication", "security"],
   "prefer_related_applications": false,
-  "iarc_rating_id": "",
+  "related_applications": [
+    {
+      "platform": "play",
+      "url": "https://play.google.com/store/apps/details?id=app.pvt.chat",
+      "id": "app.pvt.chat"
+    }
+  ],
+  "iarc_rating_id": "0",
   "launch_handler": {
     "client_mode": "focus-existing"
   }
