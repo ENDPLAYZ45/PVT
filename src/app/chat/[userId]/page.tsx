@@ -12,8 +12,7 @@ import MessageInput from "@/components/MessageInput";
 import EncryptionBadge from "@/components/EncryptionBadge";
 import BlockButton from "@/components/BlockButton";
 import PanicButton from "@/components/PanicButton";
-import CallInterface from "@/components/CallInterface";
-import { useWebRTC } from "@/hooks/useWebRTC";
+import { useCallContext } from "@/components/CallProvider";
 
 const AVATAR_COLORS = [
   "conversation-avatar--yellow",
@@ -44,19 +43,8 @@ export default function ConversationPage() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   const {
-    callState,
-    localStream,
-    remoteStream,
-    incomingCallInfo,
     startCall,
-    acceptCall,
-    declineCall,
-    endCall,
-    isVideoEnabled,
-    isAudioEnabled,
-    toggleVideo,
-    toggleAudio,
-  } = useWebRTC(user?.id, partnerId);
+  } = useCallContext();
 
   useEffect(() => {
     if (!partnerId) return;
@@ -125,8 +113,8 @@ export default function ConversationPage() {
         </div>
 
         <div className="chat-header-actions" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-          <button className="header-menu-btn" onClick={() => startCall(false)} title="Audio Call">📞</button>
-          <button className="header-menu-btn" onClick={() => startCall(true)} title="Video Call">🎥</button>
+          <button className="header-menu-btn" onClick={() => startCall(partnerId, partnerName, partnerAvatar, false)} title="Audio Call">📞</button>
+          <button className="header-menu-btn" onClick={() => startCall(partnerId, partnerName, partnerAvatar, true)} title="Video Call">🎥</button>
 
           {/* SOS always visible */}
           <PanicButton currentUserId={user.id} partnerId={partnerId} />
@@ -157,21 +145,6 @@ export default function ConversationPage() {
         </div>
       </div>
 
-      <CallInterface
-        callState={callState}
-        localStream={localStream}
-        remoteStream={remoteStream}
-        incomingCallInfo={incomingCallInfo}
-        partnerName={partnerName}
-        partnerAvatar={partnerAvatar}
-        isVideoEnabled={isVideoEnabled}
-        isAudioEnabled={isAudioEnabled}
-        onAccept={acceptCall}
-        onDecline={declineCall}
-        onEndCall={endCall}
-        onToggleVideo={toggleVideo}
-        onToggleAudio={toggleAudio}
-      />
 
       {/* ── Clear Chat Confirm ── */}
       {showClearConfirm && (
