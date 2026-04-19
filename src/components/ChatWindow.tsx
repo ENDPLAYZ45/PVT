@@ -174,7 +174,7 @@ export default function ChatWindow({
 
         return (
           <div key={msg.id} className={`message-row ${isSent ? "message-row--sent" : "message-row--received"}`}>
-            <div style={{ width: "100%" }}>
+            <div style={{ width: "100%", minWidth: 0 }}>
               {/* Reply quote */}
               {msg.reply_preview && (
                 <div className={`reply-quote ${isSent ? "reply-quote--sent" : "reply-quote--received"}`}>
@@ -182,7 +182,7 @@ export default function ChatWindow({
                 </div>
               )}
 
-              <div className="msg-bubble-row" style={{ display: "flex", gap: 6, alignItems: "flex-end", justifyContent: isSent ? "flex-end" : "flex-start" }}>
+              <div className="msg-bubble-row" style={{ display: "flex", gap: 6, alignItems: "flex-end", justifyContent: isSent ? "flex-end" : "flex-start", minWidth: 0 }}>
                 {/* Reply button (only on hover) */}
                 {!isSent && (
                   <button className="reply-btn" onClick={() => onReply(msg)} title="Reply">↩</button>
