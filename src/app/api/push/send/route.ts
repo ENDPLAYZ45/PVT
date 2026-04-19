@@ -50,9 +50,9 @@ export async function POST(req: NextRequest) {
   }
 
   const senderName = sender?.username ?? "Someone";
-  const messagePreview = record.content
-    ? record.content.substring(0, 60)
-    : "📎 sent an image";
+  // Content is end-to-end encrypted — show generic notification
+  const isImage = record.message_type === "image";
+  const messagePreview = isImage ? "📎 Sent an image" : "🔒 New encrypted message";
 
   try {
     await webpush.sendNotification(
