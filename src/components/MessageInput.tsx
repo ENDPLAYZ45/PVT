@@ -176,10 +176,17 @@ export default function MessageInput({
 
       {/* Image preview */}
       {imagePreview && (
-        <div className="image-preview-bar">
-          <img src={imagePreview.previewUrl} alt="Preview" className="image-preview-thumb" />
-          <span className="image-preview-name">{imagePreview.file.name}</span>
-          <button className="reply-bar-close" onClick={cancelImage}>✕</button>
+        <div className="image-preview-bar" style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", background: "var(--bg-chat)", borderTop: "1px solid var(--border-color)" }}>
+          <img 
+            src={imagePreview.previewUrl} 
+            alt="Preview" 
+            className="image-preview-thumb" 
+            style={{ width: "60px", height: "60px", objectFit: "cover", borderRadius: "6px", flexShrink: 0 }}
+          />
+          <span className="image-preview-name" style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: "0.85rem", color: "var(--text-muted)" }}>
+            {imagePreview.file.name}
+          </span>
+          <button className="reply-bar-close" onClick={cancelImage} style={{ flexShrink: 0, background: "rgba(255,0,0,0.1)", color: "red", border: "none", width: "24px", height: "24px", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.8rem" }}>✕</button>
         </div>
       )}
 
