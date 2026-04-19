@@ -369,6 +369,15 @@ h4 { font-size: 1.25rem; }
   border-bottom-left-radius: 3px;
 }
 
+.chat-image {
+  max-width: 100%;
+  max-height: 350px;
+  object-fit: cover;
+  border-radius: var(--radius-sm, 6px);
+  display: block;
+  margin-top: 5px;
+}
+
 .message-time {
   font-size: 0.65rem; color: var(--text-muted);
   margin-top: 3px; display: flex; align-items: center; gap: 3px;
