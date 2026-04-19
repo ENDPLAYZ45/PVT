@@ -3,11 +3,6 @@ import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
 
 // This route is called by Supabase Webhook when a new message is inserted
-webpush.setVapidDetails(
-  "mailto:admin@pvt.app",
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
-  process.env.VAPID_PRIVATE_KEY!
-);
 
 // Use service role key to bypass RLS when reading subscriptions
 const supabaseAdmin = createClient(
@@ -16,6 +11,12 @@ const supabaseAdmin = createClient(
 );
 
 export async function POST(req: NextRequest) {
+  // Set VAPID details inside handler (not module level) to avoid build-time errors
+  webpush.setVapidDetails(
+    "mailto:admin@pvt.app",
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
+    process.env.VAPID_PRIVATE_KEY!
+  );
   // Verify this is from Supabase (basic security)
   const webhookSecret = req.headers.get("x-webhook-secret");
   if (webhookSecret !== process.env.WEBHOOK_SECRET) {
