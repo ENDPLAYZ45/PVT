@@ -103,9 +103,9 @@ export default function ConversationPage() {
       <div className="chat-header">
         <div className="chat-header-user">
           <div style={{ position: "relative" }}>
-            <div className={`conversation-avatar ${partnerAvatar ? "" : getAvatarColor(partnerId)}`}>
+            <div className={`conversation-avatar ${partnerAvatar ? "" : getAvatarColor(partnerId)}`} style={{ width: "40px", height: "40px", borderRadius: "50%", flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem", fontWeight: "bold" }}>
               {partnerAvatar ? (
-                <img src={partnerAvatar} alt="Avatar" />
+                <img src={partnerAvatar} alt="Avatar" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }} />
               ) : partnerName ? (
                 partnerName.slice(0, 2).toUpperCase()
               ) : (

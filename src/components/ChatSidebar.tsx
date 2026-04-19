@@ -126,9 +126,10 @@ export default function ChatSidebar({
             >
               <div
                 className={`conversation-avatar ${convo.avatar_url ? "" : getAvatarColor(convo.user_id)}`}
+                style={{ width: "45px", height: "45px", borderRadius: "50%", flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem", fontWeight: "bold" }}
               >
                 {convo.avatar_url ? (
-                  <img src={convo.avatar_url} alt="Avatar" />
+                  <img src={convo.avatar_url} alt="Avatar" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }} />
                 ) : (
                   convo.username.slice(0, 2).toUpperCase()
                 )}
