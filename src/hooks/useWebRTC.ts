@@ -184,11 +184,15 @@ export function useWebRTC(currentUserId: string | undefined, partnerId: string |
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
     
-        channelRef.current.send({
+        const resp = await channelRef.current.send({
           type: "broadcast",
           event: "webrtc",
           payload: { sender: currentUserId, type: "offer", offer, isVideo },
         });
+        if (resp !== 'ok') {
+          alert("Call network error: Signal dropped. Check Supabase Realtime configs.");
+          handleHangup();
+        }
     } catch (err) {
         console.error("Error creating offer", err);
         handleHangup();
@@ -210,12 +214,17 @@ export function useWebRTC(currentUserId: string | undefined, partnerId: string |
         const answer = await peerConnectionRef.current.createAnswer();
         await peerConnectionRef.current.setLocalDescription(answer);
     
-        channelRef.current.send({
+        const resp = await channelRef.current.send({
           type: "broadcast",
           event: "webrtc",
           payload: { sender: currentUserId, type: "answer", answer },
         });
-        setCallState("connected");
+        if (resp !== 'ok') {
+          alert("Failed to connect: Answer signal dropped.");
+          handleHangup();
+        } else {
+          setCallState("connected");
+        }
     } catch(err) {
         console.error("Error creating answer", err);
         handleHangup();

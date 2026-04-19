@@ -40,12 +40,14 @@ export default function CallInterface({
   useEffect(() => {
     if (localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream;
+      localVideoRef.current.play().catch(err => console.error("Local play blocked:", err));
     }
   }, [localStream, callState]);
 
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
       remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play().catch(err => console.error("Remote play blocked:", err));
     }
   }, [remoteStream, callState]);
 
