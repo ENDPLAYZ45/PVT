@@ -24,6 +24,7 @@ interface CallContextValue {
   incomingCallInfo: IncomingCallInfo | null;
   isVideoEnabled: boolean;
   isAudioEnabled: boolean;
+  isAccepting: boolean;
   startCall: (partnerId: string, partnerName: string, partnerAvatar: string, isVideo: boolean) => Promise<void>;
   acceptCall: () => Promise<void>;
   declineCall: () => void;
@@ -40,21 +41,32 @@ export function useCallContext() {
   return ctx;
 }
 
+// Free TURN relay ensures media flows even between different networks / mobile NAT
 const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
     { urls: "stun:stun2.l.google.com:19302" },
+    // Free open relay TURN — handles strict NAT / mobile data networks
+    {
+      urls: "turn:openrelay.metered.ca:80",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turn:openrelay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turn:openrelay.metered.ca:443?transport=tcp",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
   ],
 };
 
-export function CallProvider({
-  currentUserId,
-  children,
-}: {
-  currentUserId: string;
-  children: ReactNode;
-}) {
+export function CallProvider({ currentUserId, children }: { currentUserId: string; children: ReactNode }) {
   const [callState, setCallState] = useState<CallState>("idle");
   const [callPartnerId, setCallPartnerId] = useState<string | null>(null);
   const [callPartnerName, setCallPartnerName] = useState("");
@@ -64,6 +76,7 @@ export function CallProvider({
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [incomingCallInfo, setIncomingCallInfo] = useState<IncomingCallInfo | null>(null);
+  const [isAccepting, setIsAccepting] = useState(false); // loading state for Accept btn
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const iceBufRef = useRef<RTCIceCandidateInit[]>([]);
@@ -79,7 +92,6 @@ export function CallProvider({
     s?.getTracks().forEach((t) => t.stop());
   }, []);
 
-  // ── Insert a signal row into call_signals table ──
   const sendSignal = useCallback(
     async (toUserId: string, type: string, data: object = {}) => {
       const supabase = createClient();
@@ -94,27 +106,31 @@ export function CallProvider({
     [currentUserId]
   );
 
+  // Clean up processed signals for this user
+  const cleanupMySignals = useCallback(async () => {
+    const supabase = createClient();
+    await supabase.from("call_signals").delete().eq("to_user_id", currentUserId);
+  }, [currentUserId]);
+
   const handleHangup = useCallback(() => {
     pcRef.current?.close();
     pcRef.current = null;
     iceBufRef.current = [];
-
-    setLocalStream((cur) => {
-      stopTracks(cur);
-      return null;
-    });
+    setLocalStream((cur) => { stopTracks(cur); return null; });
     setRemoteStream(null);
     setIncomingCallInfo(null);
     setCallPartnerId(null);
     setCallPartnerName("");
     setCallPartnerAvatar("");
+    setIsAccepting(false);
     partnerIdRef.current = null;
     syncState("ended");
-
     setTimeout(() => {
       if (callStateRef.current === "ended") syncState("idle");
     }, 2000);
-  }, [stopTracks]);
+    // Cleanup any lingering signals in DB
+    cleanupMySignals().catch(console.error);
+  }, [stopTracks, cleanupMySignals]);
 
   const flushIceBuf = async (pc: RTCPeerConnection) => {
     for (const c of iceBufRef.current) {
@@ -123,33 +139,42 @@ export function CallProvider({
     iceBufRef.current = [];
   };
 
-  const createPc = useCallback(
-    (partnerId: string) => {
-      const pc = new RTCPeerConnection(ICE_SERVERS);
+  const createPc = useCallback((partnerId: string) => {
+    const pc = new RTCPeerConnection(ICE_SERVERS);
 
-      pc.onicecandidate = (e) => {
-        if (e.candidate) {
-          sendSignal(partnerId, "ice-candidate", { candidate: e.candidate.toJSON() });
-        }
-      };
+    pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        sendSignal(partnerId, "ice-candidate", { candidate: e.candidate.toJSON() });
+      }
+    };
 
-      pc.ontrack = (e) => {
+    pc.ontrack = (e) => {
+      console.log("[Call] Remote track received:", e.track.kind);
+      if (e.streams[0]) {
         setRemoteStream(e.streams[0]);
-        syncState("connected");
-      };
+      }
+      syncState("connected");
+    };
 
-      pc.onconnectionstatechange = () => {
-        if (["disconnected", "failed", "closed"].includes(pc.connectionState)) {
-          handleHangup();
-        }
-      };
+    pc.onconnectionstatechange = () => {
+      console.log("[Call] PeerConnection state:", pc.connectionState);
+      if (["disconnected", "failed", "closed"].includes(pc.connectionState)) {
+        handleHangup();
+      }
+    };
 
-      return pc;
-    },
-    [handleHangup, sendSignal]
-  );
+    pc.onicegatheringstatechange = () => {
+      console.log("[Call] ICE gathering state:", pc.iceGatheringState);
+    };
 
-  // ── Global DB subscription — triggers on any INSERT to call_signals addressed to me ──
+    pc.oniceconnectionstatechange = () => {
+      console.log("[Call] ICE connection state:", pc.iceConnectionState);
+    };
+
+    return pc;
+  }, [handleHangup, sendSignal]);
+
+  // ── Global DB subscription — fires on ANY new call_signals row addressed to me ──
   useEffect(() => {
     if (!currentUserId) return;
     const supabase = createClient();
@@ -165,16 +190,18 @@ export function CallProvider({
           table: "call_signals",
           filter: `to_user_id=eq.${currentUserId}`,
         },
-        async (payload: { new: { from_user_id: string; type: string; data: Record<string, unknown> } }) => {
+        async (payload: { new: { id: number; from_user_id: string; type: string; data: Record<string, unknown> } }) => {
           const { from_user_id: senderId, type, data } = payload.new;
           const state = callStateRef.current;
-          console.log("[Call] Received signal:", type, "from:", senderId, "state:", state);
+          console.log("[Call] Signal received:", type, "from:", senderId, "| state:", state);
 
           switch (type) {
             case "offer": {
-              if (state !== "idle" && state !== "ended") break;
+              if (state !== "idle" && state !== "ended") {
+                console.log("[Call] Ignoring offer — already in a call");
+                break;
+              }
 
-              // Fetch caller profile
               const { data: profile } = await supabase
                 .from("users")
                 .select("username, avatar_url")
@@ -184,7 +211,7 @@ export function CallProvider({
               const callerName = profile?.username ?? "Unknown";
               const callerAvatar = profile?.avatar_url ?? "";
 
-              setIncomingCallInfo({ isVideo: data.isVideo as boolean, callerId: senderId, callerName, callerAvatar });
+              setIncomingCallInfo({ isVideo: !!data.isVideo, callerId: senderId, callerName, callerAvatar });
               setCallPartnerId(senderId);
               setCallPartnerName(callerName);
               setCallPartnerAvatar(callerAvatar);
@@ -199,7 +226,10 @@ export function CallProvider({
             }
 
             case "answer": {
-              if (!pcRef.current || state !== "calling") break;
+              if (!pcRef.current || state !== "calling") {
+                console.log("[Call] Ignoring answer — wrong state:", state);
+                break;
+              }
               await pcRef.current.setRemoteDescription(new RTCSessionDescription(data.answer as RTCSessionDescriptionInit));
               await flushIceBuf(pcRef.current);
               syncState("connected");
@@ -224,28 +254,50 @@ export function CallProvider({
         }
       )
       .subscribe((status) => {
-        console.log("[Call] DB channel status:", status);
+        console.log("[Call] DB subscription:", status);
       });
+
+    // Clean up old stale signals from previous sessions
+    cleanupMySignals().catch(console.error);
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [currentUserId, createPc, handleHangup]);
+  }, [currentUserId, createPc, handleHangup, cleanupMySignals]);
 
-  const getMedia = async (isVideo: boolean) => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: isVideo ? { facingMode: "user" } : false,
-        audio: true,
-      });
-      setLocalStream(stream);
-      setIsVideoEnabled(isVideo);
-      setIsAudioEnabled(true);
-      return stream;
-    } catch {
-      alert("Camera/Microphone access denied. Please allow permissions in your browser settings and reload.");
-      return null;
+  // ── getUserMedia with proper error messaging ──
+  const getMedia = async (isVideo: boolean): Promise<MediaStream | null> => {
+    // Try with requested video first, fallback to audio-only if video fails
+    const constraints = [
+      { video: isVideo ? { facingMode: "user" } : false, audio: { echoCancellation: true, noiseSuppression: true } },
+      { video: false, audio: { echoCancellation: true, noiseSuppression: true } }, // audio-only fallback
+    ];
+
+    for (const constraint of constraints) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraint);
+        const hasVideo = stream.getVideoTracks().length > 0;
+        setLocalStream(stream);
+        setIsVideoEnabled(hasVideo);
+        setIsAudioEnabled(true);
+        console.log("[Call] Media obtained — video:", hasVideo, "audio:", stream.getAudioTracks().length > 0);
+        return stream;
+      } catch (err) {
+        const error = err as DOMException;
+        console.warn("[Call] getUserMedia failed with constraint:", constraint, error.name);
+        if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
+          alert("⚠️ Microphone/Camera permission was denied.\n\nPlease allow access in your browser settings and try again.");
+          return null;
+        }
+        // Try next constraint (video → audio-only fallback)
+        if (constraint.video === false) {
+          alert("⚠️ Could not access microphone. Please check your device permissions.");
+          return null;
+        }
+        continue;
+      }
     }
+    return null;
   };
 
   const startCall = async (partnerId: string, partnerName: string, partnerAvatar: string, isVideo: boolean) => {
@@ -264,23 +316,27 @@ export function CallProvider({
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-
-    // This DB insert triggers Postgres Changes on the receiver's device
     await sendSignal(partnerId, "offer", { offer, isVideo });
-    console.log("[Call] Offer sent via DB to:", partnerId);
+    console.log("[Call] Offer sent to:", partnerId);
   };
 
   const acceptCall = async () => {
     if (!incomingCallInfo || !pcRef.current) return;
+    setIsAccepting(true); // Show loading on Accept button
+
     const stream = await getMedia(incomingCallInfo.isVideo);
-    if (!stream) { declineCall(); return; }
+    if (!stream) {
+      // DON'T decline — just stop the loading state so user can try again
+      setIsAccepting(false);
+      return;
+    }
 
     stream.getTracks().forEach((t) => pcRef.current!.addTrack(t, stream));
     const answer = await pcRef.current.createAnswer();
     await pcRef.current.setLocalDescription(answer);
-
     await sendSignal(incomingCallInfo.callerId, "answer", { answer });
     syncState("connected");
+    setIsAccepting(false);
   };
 
   const declineCall = () => {
@@ -311,14 +367,12 @@ export function CallProvider({
   };
 
   return (
-    <CallContext.Provider
-      value={{
-        callState, callPartnerId, callPartnerName, callPartnerAvatar,
-        localStream, remoteStream, incomingCallInfo,
-        isVideoEnabled, isAudioEnabled,
-        startCall, acceptCall, declineCall, endCall, toggleVideo, toggleAudio,
-      }}
-    >
+    <CallContext.Provider value={{
+      callState, callPartnerId, callPartnerName, callPartnerAvatar,
+      localStream, remoteStream, incomingCallInfo,
+      isVideoEnabled, isAudioEnabled, isAccepting,
+      startCall, acceptCall, declineCall, endCall, toggleVideo, toggleAudio,
+    }}>
       {children}
     </CallContext.Provider>
   );

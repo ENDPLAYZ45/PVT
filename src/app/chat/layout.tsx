@@ -14,7 +14,7 @@ function GlobalCallInterface() {
   const {
     callState, localStream, remoteStream, incomingCallInfo,
     callPartnerName, callPartnerAvatar,
-    isVideoEnabled, isAudioEnabled,
+    isVideoEnabled, isAudioEnabled, isAccepting,
     acceptCall, declineCall, endCall, toggleVideo, toggleAudio,
   } = useCallContext();
 
@@ -28,6 +28,7 @@ function GlobalCallInterface() {
       partnerAvatar={callPartnerAvatar}
       isVideoEnabled={isVideoEnabled}
       isAudioEnabled={isAudioEnabled}
+      isAccepting={isAccepting}
       onAccept={acceptCall}
       onDecline={declineCall}
       onEndCall={endCall}

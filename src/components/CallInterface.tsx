@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { CallState } from "@/hooks/useWebRTC";
+import type { CallState } from "@/components/CallProvider";
 
 interface CallInterfaceProps {
   callState: CallState;
@@ -17,6 +17,7 @@ interface CallInterfaceProps {
   onEndCall: () => void;
   onToggleVideo: () => void;
   onToggleAudio: () => void;
+  isAccepting?: boolean;
 }
 
 export default function CallInterface({
@@ -33,6 +34,7 @@ export default function CallInterface({
   onEndCall,
   onToggleVideo,
   onToggleAudio,
+  isAccepting = false,
 }: CallInterfaceProps) {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -69,8 +71,10 @@ export default function CallInterface({
           <h2 className="call-title">Incoming {incomingCallInfo?.isVideo ? "Video" : "Audio"} Call</h2>
           <p className="call-subtitle">from {partnerName}</p>
           <div className="call-actions">
-            <button className="btn btn--danger" onClick={onDecline}>Decline</button>
-            <button className="btn btn--primary" onClick={onAccept}>Accept</button>
+            <button className="btn btn--danger" onClick={onDecline} disabled={isAccepting}>Decline</button>
+            <button className="btn btn--primary" onClick={onAccept} disabled={isAccepting}>
+              {isAccepting ? "Connecting..." : "Accept"}
+            </button>
           </div>
         </div>
       </div>
