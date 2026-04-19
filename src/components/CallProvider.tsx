@@ -1,16 +1,9 @@
 "use client";
 
 import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  ReactNode,
+  createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode,
 } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { RealtimeChannel } from "@supabase/supabase-js";
 
 export type CallState = "idle" | "ringing" | "calling" | "connected" | "ended";
 
@@ -47,16 +40,21 @@ export function useCallContext() {
   return ctx;
 }
 
-const ICE_SERVERS = {
+const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
     { urls: "stun:stun2.l.google.com:19302" },
-    { urls: "stun:stun3.l.google.com:19302" },
   ],
 };
 
-export function CallProvider({ currentUserId, children }: { currentUserId: string; children: ReactNode }) {
+export function CallProvider({
+  currentUserId,
+  children,
+}: {
+  currentUserId: string;
+  children: ReactNode;
+}) {
   const [callState, setCallState] = useState<CallState>("idle");
   const [callPartnerId, setCallPartnerId] = useState<string | null>(null);
   const [callPartnerName, setCallPartnerName] = useState("");
@@ -68,13 +66,10 @@ export function CallProvider({ currentUserId, children }: { currentUserId: strin
   const [incomingCallInfo, setIncomingCallInfo] = useState<IncomingCallInfo | null>(null);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
-  const myChannelRef = useRef<RealtimeChannel | null>(null);
-  const partnerChannelRef = useRef<RealtimeChannel | null>(null);
   const iceBufRef = useRef<RTCIceCandidateInit[]>([]);
   const callStateRef = useRef<CallState>("idle");
   const partnerIdRef = useRef<string | null>(null);
 
-  /* ── helpers ── */
   const syncState = (s: CallState) => {
     callStateRef.current = s;
     setCallState(s);
@@ -84,57 +79,42 @@ export function CallProvider({ currentUserId, children }: { currentUserId: strin
     s?.getTracks().forEach((t) => t.stop());
   }, []);
 
-  const sendToPartner = useCallback(
-    async (partnerId: string, payload: object) => {
+  // ── Insert a signal row into call_signals table ──
+  const sendSignal = useCallback(
+    async (toUserId: string, type: string, data: object = {}) => {
       const supabase = createClient();
-
-      // If we already have a channel for this partner, use it
-      if (!partnerChannelRef.current) {
-        const ch = supabase.channel(`user-signal:${partnerId}`, {
-          config: { broadcast: { ack: true } },
-        });
-        await new Promise<void>((res) => {
-          ch.subscribe((status) => { if (status === "SUBSCRIBED") res(); });
-        });
-        partnerChannelRef.current = ch;
-      }
-
-      return partnerChannelRef.current.send({
-        type: "broadcast",
-        event: "call-signal",
-        payload,
+      const { error } = await supabase.from("call_signals").insert({
+        from_user_id: currentUserId,
+        to_user_id: toUserId,
+        type,
+        data,
       });
+      if (error) console.error("[Call] sendSignal error:", type, error.message);
     },
-    []
+    [currentUserId]
   );
-
-  const cleanupPartnerChannel = useCallback(() => {
-    if (partnerChannelRef.current) {
-      const supabase = createClient();
-      supabase.removeChannel(partnerChannelRef.current);
-      partnerChannelRef.current = null;
-    }
-  }, []);
 
   const handleHangup = useCallback(() => {
     pcRef.current?.close();
     pcRef.current = null;
     iceBufRef.current = [];
 
-    setLocalStream((cur) => { stopTracks(cur); return null; });
+    setLocalStream((cur) => {
+      stopTracks(cur);
+      return null;
+    });
     setRemoteStream(null);
     setIncomingCallInfo(null);
     setCallPartnerId(null);
     setCallPartnerName("");
     setCallPartnerAvatar("");
     partnerIdRef.current = null;
-    cleanupPartnerChannel();
     syncState("ended");
 
     setTimeout(() => {
       if (callStateRef.current === "ended") syncState("idle");
     }, 2000);
-  }, [stopTracks, cleanupPartnerChannel]);
+  }, [stopTracks]);
 
   const flushIceBuf = async (pc: RTCPeerConnection) => {
     for (const c of iceBufRef.current) {
@@ -143,89 +123,115 @@ export function CallProvider({ currentUserId, children }: { currentUserId: strin
     iceBufRef.current = [];
   };
 
-  const createPc = useCallback((onIce: (c: RTCIceCandidateInit) => void) => {
-    const pc = new RTCPeerConnection(ICE_SERVERS);
-    pc.onicecandidate = (e) => { if (e.candidate) onIce(e.candidate.toJSON()); };
-    pc.ontrack = (e) => { setRemoteStream(e.streams[0]); syncState("connected"); };
-    pc.onconnectionstatechange = () => {
-      if (["disconnected", "failed", "closed"].includes(pc.connectionState)) handleHangup();
-    };
-    return pc;
-  }, [handleHangup]);
+  const createPc = useCallback(
+    (partnerId: string) => {
+      const pc = new RTCPeerConnection(ICE_SERVERS);
 
-  /* ── Personal incoming-signal channel (always live) ── */
+      pc.onicecandidate = (e) => {
+        if (e.candidate) {
+          sendSignal(partnerId, "ice-candidate", { candidate: e.candidate.toJSON() });
+        }
+      };
+
+      pc.ontrack = (e) => {
+        setRemoteStream(e.streams[0]);
+        syncState("connected");
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (["disconnected", "failed", "closed"].includes(pc.connectionState)) {
+          handleHangup();
+        }
+      };
+
+      return pc;
+    },
+    [handleHangup, sendSignal]
+  );
+
+  // ── Global DB subscription — triggers on any INSERT to call_signals addressed to me ──
   useEffect(() => {
     if (!currentUserId) return;
     const supabase = createClient();
-    const ch = supabase.channel(`user-signal:${currentUserId}`, {
-      config: { broadcast: { ack: true } },
-    });
 
-    ch.on("broadcast", { event: "call-signal" }, async ({ payload }) => {
-      if (payload.sender === currentUserId) return;
-      const state = callStateRef.current;
+    const channel = supabase
+      .channel(`call-signals-${currentUserId}`)
+      .on(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        "postgres_changes" as any,
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "call_signals",
+          filter: `to_user_id=eq.${currentUserId}`,
+        },
+        async (payload: { new: { from_user_id: string; type: string; data: Record<string, unknown> } }) => {
+          const { from_user_id: senderId, type, data } = payload.new;
+          const state = callStateRef.current;
+          console.log("[Call] Received signal:", type, "from:", senderId, "state:", state);
 
-      switch (payload.type) {
-        case "offer": {
-          if (state !== "idle" && state !== "ended") break;
-          // Fetch caller profile
-          const supa = createClient();
-          const { data } = await supa.from("users").select("username, avatar_url").eq("id", payload.sender).single();
-          setIncomingCallInfo({
-            isVideo: payload.isVideo,
-            callerId: payload.sender,
-            callerName: data?.username ?? "Unknown",
-            callerAvatar: data?.avatar_url ?? "",
-          });
-          setCallPartnerId(payload.sender);
-          setCallPartnerName(data?.username ?? "");
-          setCallPartnerAvatar(data?.avatar_url ?? "");
-          partnerIdRef.current = payload.sender;
-          syncState("ringing");
+          switch (type) {
+            case "offer": {
+              if (state !== "idle" && state !== "ended") break;
 
-          const pc = createPc(async (candidate) => {
-            await sendToPartner(payload.sender, { sender: currentUserId, type: "ice-candidate", candidate });
-          });
-          pcRef.current = pc;
-          await pc.setRemoteDescription(new RTCSessionDescription(payload.offer));
-          await flushIceBuf(pc);
-          break;
-        }
+              // Fetch caller profile
+              const { data: profile } = await supabase
+                .from("users")
+                .select("username, avatar_url")
+                .eq("id", senderId)
+                .single();
 
-        case "answer": {
-          if (!pcRef.current || state !== "calling") break;
-          await pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.answer));
-          await flushIceBuf(pcRef.current);
-          syncState("connected");
-          break;
-        }
+              const callerName = profile?.username ?? "Unknown";
+              const callerAvatar = profile?.avatar_url ?? "";
 
-        case "ice-candidate": {
-          if (!pcRef.current) break;
-          if (pcRef.current.remoteDescription?.type) {
-            await pcRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate)).catch(console.error);
-          } else {
-            iceBufRef.current.push(payload.candidate);
+              setIncomingCallInfo({ isVideo: data.isVideo as boolean, callerId: senderId, callerName, callerAvatar });
+              setCallPartnerId(senderId);
+              setCallPartnerName(callerName);
+              setCallPartnerAvatar(callerAvatar);
+              partnerIdRef.current = senderId;
+              syncState("ringing");
+
+              const pc = createPc(senderId);
+              pcRef.current = pc;
+              await pc.setRemoteDescription(new RTCSessionDescription(data.offer as RTCSessionDescriptionInit));
+              await flushIceBuf(pc);
+              break;
+            }
+
+            case "answer": {
+              if (!pcRef.current || state !== "calling") break;
+              await pcRef.current.setRemoteDescription(new RTCSessionDescription(data.answer as RTCSessionDescriptionInit));
+              await flushIceBuf(pcRef.current);
+              syncState("connected");
+              break;
+            }
+
+            case "ice-candidate": {
+              if (!pcRef.current) break;
+              const candidate = data.candidate as RTCIceCandidateInit;
+              if (pcRef.current.remoteDescription?.type) {
+                await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)).catch(console.error);
+              } else {
+                iceBufRef.current.push(candidate);
+              }
+              break;
+            }
+
+            case "hangup":
+              handleHangup();
+              break;
           }
-          break;
         }
-
-        case "hangup":
-          handleHangup();
-          break;
-      }
-    });
-
-    ch.subscribe((status) => console.log("[Call] My channel status:", status));
-    myChannelRef.current = ch;
+      )
+      .subscribe((status) => {
+        console.log("[Call] DB channel status:", status);
+      });
 
     return () => {
-      supabase.removeChannel(ch);
-      myChannelRef.current = null;
+      supabase.removeChannel(channel);
     };
-  }, [currentUserId, createPc, handleHangup, sendToPartner]);
+  }, [currentUserId, createPc, handleHangup]);
 
-  /* ── Public actions ── */
   const getMedia = async (isVideo: boolean) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -237,7 +243,7 @@ export function CallProvider({ currentUserId, children }: { currentUserId: strin
       setIsAudioEnabled(true);
       return stream;
     } catch {
-      alert("Camera/Microphone access denied. Please allow permissions and try again.");
+      alert("Camera/Microphone access denied. Please allow permissions in your browser settings and reload.");
       return null;
     }
   };
@@ -252,29 +258,16 @@ export function CallProvider({ currentUserId, children }: { currentUserId: strin
     partnerIdRef.current = partnerId;
     syncState("calling");
 
-    // Subscribe to partner's channel to send them the signal
-    cleanupPartnerChannel();
-
-    const pc = createPc(async (candidate) => {
-      await sendToPartner(partnerId, { sender: currentUserId, type: "ice-candidate", candidate });
-    });
+    const pc = createPc(partnerId);
     pcRef.current = pc;
     stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    const resp = await sendToPartner(partnerId, {
-      sender: currentUserId,
-      type: "offer",
-      offer,
-      isVideo,
-    });
-
-    if (resp !== "ok") {
-      alert("Call failed — could not reach the other user. Make sure they have the app open.");
-      handleHangup();
-    }
+    // This DB insert triggers Postgres Changes on the receiver's device
+    await sendSignal(partnerId, "offer", { offer, isVideo });
+    console.log("[Call] Offer sent via DB to:", partnerId);
   };
 
   const acceptCall = async () => {
@@ -286,32 +279,20 @@ export function CallProvider({ currentUserId, children }: { currentUserId: strin
     const answer = await pcRef.current.createAnswer();
     await pcRef.current.setLocalDescription(answer);
 
-    const resp = await sendToPartner(incomingCallInfo.callerId, {
-      sender: currentUserId,
-      type: "answer",
-      answer,
-    });
-
-    if (resp !== "ok") {
-      alert("Failed to connect — answer signal dropped.");
-      handleHangup();
-    } else {
-      syncState("connected");
-    }
+    await sendSignal(incomingCallInfo.callerId, "answer", { answer });
+    syncState("connected");
   };
 
   const declineCall = () => {
     if (incomingCallInfo) {
-      sendToPartner(incomingCallInfo.callerId, { sender: currentUserId, type: "hangup" }).catch(console.error);
+      sendSignal(incomingCallInfo.callerId, "hangup").catch(console.error);
     }
     handleHangup();
   };
 
   const endCall = () => {
     const pid = partnerIdRef.current;
-    if (pid) {
-      sendToPartner(pid, { sender: currentUserId, type: "hangup" }).catch(console.error);
-    }
+    if (pid) sendSignal(pid, "hangup").catch(console.error);
     handleHangup();
   };
 
