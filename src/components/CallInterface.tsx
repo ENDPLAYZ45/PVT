@@ -113,7 +113,8 @@ export default function CallInterface({
         ref={remoteVideoRef}
         autoPlay
         playsInline
-        className={`call-video-remote ${!hasRemoteVideo ? "hidden" : ""}`}
+        style={!hasRemoteVideo ? { position: "absolute", width: 0, height: 0, opacity: 0, pointerEvents: "none" } : {}}
+        className="call-video-remote"
       />
       
       {/* Fallback avatar for audio-only calls */}
@@ -137,7 +138,7 @@ export default function CallInterface({
         playsInline
         muted
         className="call-video-local"
-        style={{ display: isVideoEnabled && localStream && localStream.getVideoTracks().length > 0 ? "block" : "none" }}
+        style={isVideoEnabled && localStream && localStream.getVideoTracks().length > 0 ? {} : { position: "absolute", width: 0, height: 0, opacity: 0, pointerEvents: "none" }}
       />
       
       {/* Controls */}
