@@ -8,6 +8,7 @@ import ChatSidebar from "@/components/ChatSidebar";
 import KeyWarningBanner from "@/components/KeyWarningBanner";
 import { CallProvider, useCallContext } from "@/components/CallProvider";
 import CallInterface from "@/components/CallInterface";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 /** Renders the global call overlay — must be inside CallProvider */
 function GlobalCallInterface() {
@@ -44,6 +45,9 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const params = useParams();
   const hasActiveChat = !!params?.userId;
+
+  // Register service worker + subscribe to push notifications
+  usePushNotifications(user?.id);
 
   if (loading) {
     return (

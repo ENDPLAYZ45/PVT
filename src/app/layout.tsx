@@ -6,10 +6,17 @@ export const metadata: Metadata = {
   title: "PVT — Private E2E Encrypted Messaging",
   description:
     "A privacy-first messaging platform with end-to-end encryption. Your messages, your keys, your privacy.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "PVT",
+  },
   other: {
     "apple-mobile-web-app-capable": "yes",
-    "apple-mobile-web-app-status-bar-style": "default",
+    "apple-mobile-web-app-status-bar-style": "black-translucent",
     "mobile-web-app-capable": "yes",
+    "theme-color": "#0a0a0a",
   },
 };
 
