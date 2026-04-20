@@ -97,11 +97,14 @@ export function useConversations(currentUserId: string | undefined) {
           schema: "public",
           table: "messages",
         },
-        () => {
+        (payload) => {
+          console.log('[Realtime] Sidebar message event:', payload.event);
           fetchConversations();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log(`[Realtime] Sidebar subscription status:`, status);
+      });
 
     return () => {
       supabase.removeChannel(channel);

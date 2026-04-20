@@ -93,17 +93,21 @@ export function useRealtimeMessages(
           table: "messages"
         },
         (payload) => {
+          console.log('[Realtime] New message INSERT:', payload.new);
           const newMsg = payload.new as RawMessage;
           const isRelevant =
             (newMsg.sender_id === currentUserId && newMsg.receiver_id === partnerId) ||
             (newMsg.sender_id === partnerId && newMsg.receiver_id === currentUserId);
           
           if (isRelevant) {
+            console.log('[Realtime] Message is relevant, adding to state');
             setMessages((prev) => {
               if (prev.some((m) => m.id === newMsg.id)) return prev;
               const next = [...prev, { ...newMsg, _reactions: [] }];
               return next.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
             });
+          } else {
+            console.log('[Realtime] Message ignored (not for this chat)');
           }
         }
       )
@@ -111,6 +115,7 @@ export function useRealtimeMessages(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "messages" },
         (payload) => {
+          console.log('[Realtime] Message UPDATE:', payload.new);
           const updated = payload.new as RawMessage;
           setMessages((prev) =>
             prev.map((m) => (m.id === updated.id ? { ...m, ...updated } : m))
@@ -121,6 +126,7 @@ export function useRealtimeMessages(
         "postgres_changes",
         { event: "*", schema: "public", table: "message_reactions" },
         async (payload) => {
+          console.log('[Realtime] Reaction change:', payload.event);
           const msgId = (payload.new as { message_id: string })?.message_id
             || (payload.old as { message_id: string })?.message_id;
           if (!msgId) return;
@@ -140,8 +146,9 @@ export function useRealtimeMessages(
         }
       )
       .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('[Realtime] Subscribed to chat channel');
+        console.log(`[Realtime] Subscription status for chat:${partnerId}:`, status);
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[Realtime] Channel error occurred. Possible RLS or Replication issue.');
         }
       });
 
