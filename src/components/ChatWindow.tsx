@@ -8,6 +8,13 @@ import { PartnerPresence } from "@/hooks/usePresence";
 
 const PANIC_MARKER = "__SYSTEM__PANIC__";
 
+const QUICK_EMOJIS = ["❤️", "😂", "😮", "😢", "👍", "👎"];
+const EMOJI_PICKER_LIST = [
+  "😀","😂","😍","😮","😢","😡","👍","👎","❤️","🔥",
+  "🎉","😎","🤔","😴","🙏","💪","✅","❌","💯","🚀",
+  "👏","🤣","😅","😭","🥰","😜","🤯","😤","🥳","😇",
+];
+
 interface DecryptedMessage extends RawMessage {
   plaintext: string;
   decryptFailed: boolean;
@@ -23,6 +30,8 @@ interface ChatWindowProps {
   partnerPresence: PartnerPresence;
   partnerName: string;
   onReply: (msg: RawMessage) => void;
+  onDelete: (id: string) => void;
+  onEdit: (msg: DecryptedMessage) => void;
 }
 
 function formatTime(dateStr: string) {
@@ -38,6 +47,8 @@ function formatLastSeen(isoStr: string) {
   return d.toLocaleDateString();
 }
 
+export type { DecryptedMessage };
+
 export default function ChatWindow({
   messages,
   currentUserId,
@@ -46,9 +57,14 @@ export default function ChatWindow({
   partnerPresence,
   partnerName,
   onReply,
+  onDelete,
+  onEdit,
 }: ChatWindowProps) {
   const [decryptedMessages, setDecryptedMessages] = useState<DecryptedMessage[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [emojiPickerFor, setEmojiPickerFor] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function decryptAll() {
@@ -59,6 +75,11 @@ export default function ChatWindow({
 
         if (msg.ciphertext === PANIC_MARKER) {
           results.push({ ...msg, plaintext: PANIC_MARKER, decryptFailed: false, isPanic: true });
+          continue;
+        }
+
+        if (msg.is_deleted) {
+          results.push({ ...msg, plaintext: "__DELETED__", decryptFailed: false, isPanic: false });
           continue;
         }
 
@@ -79,7 +100,7 @@ export default function ChatWindow({
             const objectUrl = await decryptImageBlob(encryptedData, aesKeyString, msg.image_iv, msg.image_mime || "image/jpeg");
             results.push({ ...msg, plaintext: "[Image]", decryptFailed: false, isPanic: false, imageObjectUrl: objectUrl });
           } catch {
-            // Hide old images that cannot be decrypted due to key rotation
+            // Hide old images that cannot be decrypted
           }
           continue;
         }
@@ -90,22 +111,14 @@ export default function ChatWindow({
             try {
               const plaintext = await decryptMessage(privateKey, msg.sender_ciphertext);
               results.push({ ...msg, plaintext, decryptFailed: false, isPanic: false });
-            } catch {
-              // Hide old messages that cannot be decrypted
-            }
-          } else {
-            // Hide messages if no private key is available to decrypt sender copy
+            } catch { /* hide */ }
           }
         } else {
           if (privateKey) {
             try {
               const plaintext = await decryptMessage(privateKey, msg.ciphertext);
               results.push({ ...msg, plaintext, decryptFailed: false, isPanic: false });
-            } catch {
-              // Hide unreadable messages
-            }
-          } else {
-            // Hide if no private key is available
+            } catch { /* hide */ }
           }
         }
       }
@@ -122,6 +135,28 @@ export default function ChatWindow({
     }
   }, [decryptedMessages, partnerPresence.isTyping]);
 
+  // Close menu on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setActiveMenu(null);
+        setEmojiPickerFor(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const toggleReaction = async (messageId: string, emoji: string) => {
+    setEmojiPickerFor(null);
+    setActiveMenu(null);
+    await fetch("/api/reactions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message_id: messageId, emoji }),
+    });
+  };
+
   if (!hasKey) {
     return (
       <div className="messages-container" ref={containerRef}>
@@ -134,7 +169,6 @@ export default function ChatWindow({
     );
   }
 
-  // Find the last sent message for seen receipt
   const lastSentMsg = [...decryptedMessages].reverse().find(m => m.sender_id === currentUserId && !m.isPanic);
 
   return (
@@ -158,6 +192,7 @@ export default function ChatWindow({
       {decryptedMessages.map((msg) => {
         const isSent = msg.sender_id === currentUserId;
         const isLastSent = lastSentMsg?.id === msg.id;
+        const isDeleted = msg.plaintext === "__DELETED__" || msg.is_deleted;
 
         if (msg.isPanic) {
           return (
@@ -182,34 +217,111 @@ export default function ChatWindow({
                 </div>
               )}
 
-              <div className="msg-bubble-row" style={{ display: "flex", gap: 6, alignItems: "flex-end", justifyContent: isSent ? "flex-end" : "flex-start", minWidth: 0 }}>
-                {/* Reply button (only on hover) */}
-                {!isSent && (
-                  <button className="reply-btn" onClick={() => onReply(msg)} title="Reply">↩</button>
+              <div
+                className="msg-bubble-row"
+                style={{ display: "flex", gap: 6, alignItems: "flex-end", justifyContent: isSent ? "flex-end" : "flex-start", minWidth: 0, position: "relative" }}
+              >
+                {/* Reply button left (received) */}
+                {!isSent && !isDeleted && (
+                  <button className="reply-btn" onClick={() => onReply({ ...msg, _plaintext: msg.plaintext })} title="Reply">↩</button>
                 )}
-                <div
-                  className={`message-bubble ${isSent ? "message-bubble--sent" : "message-bubble--received"}`}
-                  style={{ minWidth: 0, wordBreak: "break-word", ...(msg.decryptFailed ? { opacity: 0.6 } : {}) }}
-                >
-                  {msg.imageObjectUrl ? (
-                    <img
-                      src={msg.imageObjectUrl}
-                      alt="Encrypted image"
-                      className="chat-image"
-                      style={{ maxWidth: "100%", maxHeight: "350px", objectFit: "scale-down", borderRadius: "6px", display: "block", margin: "5px 0" }}
-                      onLoad={() => {}}
-                    />
-                  ) : (
-                    msg.plaintext
+
+                {/* Message Bubble */}
+                <div style={{ position: "relative", maxWidth: "100%" }}>
+                  <div
+                    className={`message-bubble ${isSent ? "message-bubble--sent" : "message-bubble--received"} ${isDeleted ? "message-bubble--deleted" : ""}`}
+                    style={{ minWidth: 0, wordBreak: "break-word" }}
+                    onContextMenu={(e) => { e.preventDefault(); setActiveMenu(msg.id); setEmojiPickerFor(null); }}
+                  >
+                    {isDeleted ? (
+                      <span style={{ fontStyle: "italic", opacity: 0.6 }}>🗑 Message deleted</span>
+                    ) : msg.imageObjectUrl ? (
+                      <img
+                        src={msg.imageObjectUrl}
+                        alt="Encrypted image"
+                        className="chat-image"
+                        style={{ maxWidth: "100%", maxHeight: "350px", objectFit: "scale-down", borderRadius: "6px", display: "block", margin: "5px 0" }}
+                      />
+                    ) : (
+                      msg.plaintext
+                    )}
+                  </div>
+
+                  {/* Message actions popover */}
+                  {activeMenu === msg.id && (
+                    <div
+                      ref={menuRef}
+                      className={`msg-actions-menu ${isSent ? "msg-actions-menu--sent" : "msg-actions-menu--received"}`}
+                    >
+                      {/* Quick emoji reactions row */}
+                      <div className="msg-actions-reactions">
+                        {QUICK_EMOJIS.map(emoji => (
+                          <button key={emoji} className="quick-react-btn" onClick={() => toggleReaction(msg.id, emoji)}>
+                            {emoji}
+                          </button>
+                        ))}
+                        <button className="quick-react-btn" onClick={() => { setEmojiPickerFor(msg.id); setActiveMenu(null); }} title="More">
+                          ➕
+                        </button>
+                      </div>
+                      <div className="msg-actions-divider" />
+                      {/* Action buttons */}
+                      {!isDeleted && (
+                        <button className="msg-action-btn" onClick={() => { onReply({ ...msg, _plaintext: msg.plaintext }); setActiveMenu(null); }}>
+                          ↩ Reply
+                        </button>
+                      )}
+                      {isSent && !isDeleted && (
+                        <button className="msg-action-btn" onClick={() => { onEdit(msg); setActiveMenu(null); }}>
+                          ✏️ Edit
+                        </button>
+                      )}
+                      {isSent && !isDeleted && (
+                        <button className="msg-action-btn msg-action-btn--danger" onClick={() => { onDelete(msg.id); setActiveMenu(null); }}>
+                          🗑️ Delete
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Full emoji picker popover */}
+                  {emojiPickerFor === msg.id && (
+                    <div ref={menuRef} className={`emoji-picker-popover ${isSent ? "emoji-picker-popover--sent" : ""}`}>
+                      <div className="emoji-picker-grid">
+                        {EMOJI_PICKER_LIST.map(emoji => (
+                          <button key={emoji} className="emoji-picker-btn" onClick={() => toggleReaction(msg.id, emoji)}>
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
-                {isSent && (
-                  <button className="reply-btn" onClick={() => onReply(msg)} title="Reply">↩</button>
+
+                {/* Reply button right (sent) */}
+                {isSent && !isDeleted && (
+                  <button className="reply-btn" onClick={() => onReply({ ...msg, _plaintext: msg.plaintext })} title="Reply">↩</button>
                 )}
               </div>
 
+              {/* Emoji reactions display */}
+              {msg._reactions && msg._reactions.length > 0 && (
+                <div className={`reactions-row ${isSent ? "reactions-row--sent" : ""}`}>
+                  {msg._reactions.map(r => (
+                    <button
+                      key={r.emoji}
+                      className={`reaction-bubble ${r.hasReacted ? "reaction-bubble--active" : ""}`}
+                      onClick={() => toggleReaction(msg.id, r.emoji)}
+                    >
+                      {r.emoji} <span>{r.count}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <div className="message-time" style={{ justifyContent: isSent ? "flex-end" : "flex-start" }}>
                 <span>{formatTime(msg.created_at)}</span>
+                {msg.edited_at && !isDeleted && <span style={{ opacity: 0.5, fontSize: "0.65rem" }}>(edited)</span>}
                 {isSent && msg.read_at && isLastSent && (
                   <span className="seen-receipt">Seen {formatTime(msg.read_at)}</span>
                 )}

@@ -1354,3 +1354,134 @@ h4 { font-size: 1.25rem; }
 .call-btn:hover { transform: scale(1.1); }
 .call-btn--off { background: var(--border-color); color: var(--text-muted); }
 .call-btn--danger { background: var(--red); color: white; width: auto; border-radius: 40px; padding: 0 20px; font-weight: bold; }
+
+/* ========== MESSAGE ACTIONS ========== */
+.msg-actions-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  z-index: 50;
+  background: var(--card-bg);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 6px;
+  min-width: 170px;
+  animation: popIn 0.15s var(--transition-bounce);
+}
+.msg-actions-menu--sent { right: 0; }
+.msg-actions-menu--received { left: 0; }
+
+.msg-actions-reactions {
+  display: flex; gap: 4px; padding: 4px 2px 8px;
+  justify-content: space-between;
+}
+.quick-react-btn {
+  background: none; border: 2px solid transparent;
+  border-radius: var(--radius); font-size: 1.25rem;
+  cursor: pointer; padding: 4px; line-height: 1;
+  transition: transform 0.1s, background 0.1s;
+}
+.quick-react-btn:hover {
+  background: var(--hover-bg); border-color: var(--border-color);
+  transform: scale(1.25);
+}
+
+.msg-actions-divider {
+  height: 1px; background: var(--border-color); margin: 2px 0;
+}
+.msg-action-btn {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 9px 12px;
+  background: none; border: none;
+  font-family: var(--font-body); font-size: 0.88rem;
+  color: var(--text-primary); cursor: pointer;
+  border-radius: var(--radius); text-align: left;
+  transition: background 0.1s;
+}
+.msg-action-btn:hover { background: var(--hover-bg); }
+.msg-action-btn--danger { color: var(--red); }
+.msg-action-btn--danger:hover { background: rgba(239,68,68,0.08); }
+
+/* ========== EMOJI PICKER POPOVER ========== */
+.emoji-picker-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  background: var(--card-bg);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 8px;
+  animation: popIn 0.15s var(--transition-bounce);
+}
+.emoji-picker-popover--sent { left: auto; right: 0; }
+
+.emoji-picker-grid {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
+}
+.emoji-picker-btn {
+  background: none; border: 2px solid transparent;
+  border-radius: var(--radius); font-size: 1.3rem;
+  cursor: pointer; padding: 6px; line-height: 1;
+  transition: transform 0.1s, background 0.1s;
+}
+.emoji-picker-btn:hover {
+  background: var(--hover-bg); border-color: var(--border-color);
+  transform: scale(1.2);
+}
+
+/* Input bar emoji picker */
+.input-emoji-picker {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 60;
+  background: var(--card-bg);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 10px;
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
+  animation: popIn 0.15s var(--transition-bounce);
+  min-width: 200px;
+}
+
+/* ========== EMOJI REACTIONS DISPLAY ========== */
+.reactions-row {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin-top: 4px;
+}
+.reactions-row--sent { justify-content: flex-end; }
+
+.reaction-bubble {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 8px;
+  background: var(--bg-secondary);
+  border: 2px solid var(--border-color);
+  border-radius: 20px;
+  font-size: 0.85rem; cursor: pointer;
+  transition: transform 0.1s, background 0.1s;
+}
+.reaction-bubble span { font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); }
+.reaction-bubble:hover { background: var(--hover-bg); transform: scale(1.08); }
+.reaction-bubble--active {
+  background: var(--yellow-light);
+  border-color: var(--yellow);
+}
+[data-theme="dark"] .reaction-bubble--active {
+  background: #2a2600; border-color: var(--yellow);
+}
+
+/* ========== DELETED MESSAGE ========== */
+.message-bubble--deleted {
+  opacity: 0.55;
+  border-style: dashed !important;
+}
+
+/* ========== EDIT MODE IN INPUT ========== */
+.reply-bar--edit {
+  border-left-color: var(--blue) !important;
+  background: rgba(78,205,196,0.08) !important;
+}
+.send-btn--edit { background: var(--blue) !important; }

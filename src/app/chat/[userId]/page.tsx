@@ -7,7 +7,7 @@ import { usePrivateKey } from "@/hooks/usePrivateKey";
 import { useRealtimeMessages, RawMessage } from "@/hooks/useRealtimeMessages";
 import { usePresence } from "@/hooks/usePresence";
 import { createClient } from "@/lib/supabase/client";
-import ChatWindow from "@/components/ChatWindow";
+import ChatWindow, { DecryptedMessage } from "@/components/ChatWindow";
 import MessageInput from "@/components/MessageInput";
 import EncryptionBadge from "@/components/EncryptionBadge";
 import BlockButton from "@/components/BlockButton";
@@ -32,19 +32,18 @@ export default function ConversationPage() {
   const partnerId = params?.userId as string;
   const { user } = useSupabaseUser();
   const { privateKey, hasKey } = usePrivateKey(user?.id);
-  const { messages, loading, addOptimisticMessage, clearMessages } = useRealtimeMessages(user?.id, partnerId);
+  const { messages, loading, addOptimisticMessage, clearMessages, updateMessage } = useRealtimeMessages(user?.id, partnerId);
   const { partnerPresence, sendTyping } = usePresence(user?.id ?? "", partnerId);
   const [partnerName, setPartnerName] = useState("");
   const [partnerAvatar, setPartnerAvatar] = useState("");
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [replyTo, setReplyTo] = useState<RawMessage | null>(null);
+  const [editingMsg, setEditingMsg] = useState<DecryptedMessage | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const {
-    startCall,
-  } = useCallContext();
+  const { startCall } = useCallContext();
 
   useEffect(() => {
     if (!partnerId) return;
@@ -59,7 +58,6 @@ export default function ConversationPage() {
     fetchPartner();
   }, [partnerId]);
 
-  // Close menu on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -82,10 +80,23 @@ export default function ConversationPage() {
     setMenuOpen(false);
   };
 
+  const handleDelete = async (id: string) => {
+    updateMessage(id, { is_deleted: true });
+    fetch(`/api/messages/${id}`, { method: "DELETE" }).catch(console.error);
+  };
+
+  const handleEditSent = (id: string, newPlaintext: string, ciphertext: string, senderCiphertext: string) => {
+    updateMessage(id, {
+      _plaintext: newPlaintext,
+      ciphertext,
+      sender_ciphertext: senderCiphertext,
+      edited_at: new Date().toISOString(),
+    });
+  };
+
   if (!user) return null;
 
   return (
-    /* Fixed flex column — header + messages (scroll) + input (fixed bottom) */
     <div className="conversation-layout">
       {/* ── Chat Header ── */}
       <div className="chat-header">
@@ -115,21 +126,10 @@ export default function ConversationPage() {
         <div className="chat-header-actions" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
           <button className="header-menu-btn" onClick={() => startCall(partnerId, partnerName, partnerAvatar, false)} title="Audio Call">📞</button>
           <button className="header-menu-btn" onClick={() => startCall(partnerId, partnerName, partnerAvatar, true)} title="Video Call">🎥</button>
-
-          {/* SOS always visible */}
           <PanicButton currentUserId={user.id} partnerId={partnerId} />
 
-          {/* 3-dots menu */}
           <div className="header-menu-wrap" ref={menuRef}>
-            <button
-              className="header-menu-btn"
-              onClick={() => setMenuOpen((o) => !o)}
-              title="More options"
-              aria-label="More options"
-            >
-              ⋮
-            </button>
-
+            <button className="header-menu-btn" onClick={() => setMenuOpen((o) => !o)} title="More options" aria-label="More options">⋮</button>
             {menuOpen && (
               <div className="header-dropdown">
                 <div className="header-dropdown-item" onClick={() => { setShowClearConfirm(true); setMenuOpen(false); }}>
@@ -144,7 +144,6 @@ export default function ConversationPage() {
           </div>
         </div>
       </div>
-
 
       {/* ── Clear Chat Confirm ── */}
       {showClearConfirm && (
@@ -163,7 +162,7 @@ export default function ConversationPage() {
         </div>
       )}
 
-      {/* ── Messages (scrollable middle) ── */}
+      {/* ── Messages ── */}
       <div className="conversation-messages">
         {loading ? (
           <div className="loading-center"><div className="spinner" /></div>
@@ -176,11 +175,13 @@ export default function ConversationPage() {
             partnerPresence={partnerPresence}
             partnerName={partnerName}
             onReply={setReplyTo}
+            onDelete={handleDelete}
+            onEdit={setEditingMsg}
           />
         )}
       </div>
 
-      {/* ── Input (fixed bottom) ── */}
+      {/* ── Input ── */}
       <div className="conversation-input">
         <MessageInput
           receiverId={partnerId}
@@ -189,6 +190,9 @@ export default function ConversationPage() {
           onTyping={sendTyping}
           replyTo={replyTo}
           onCancelReply={() => setReplyTo(null)}
+          editingMsg={editingMsg}
+          onCancelEdit={() => setEditingMsg(null)}
+          onEditSent={handleEditSent}
         />
       </div>
     </div>

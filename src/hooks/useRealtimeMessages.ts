@@ -3,6 +3,12 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 
+export interface Reaction {
+  emoji: string;
+  count: number;
+  hasReacted: boolean;
+}
+
 export interface RawMessage {
   id: string;
   sender_id: string;
@@ -12,6 +18,8 @@ export interface RawMessage {
   delivered_at: string | null;
   read_at: string | null;
   created_at: string;
+  edited_at: string | null;
+  is_deleted: boolean;
   // Reply
   reply_to_id: string | null;
   reply_preview: string | null;
@@ -24,6 +32,8 @@ export interface RawMessage {
   image_mime: string | null;
   // Local only
   _plaintext?: string;
+  // Reactions (loaded client-side)
+  _reactions?: Reaction[];
 }
 
 export function useRealtimeMessages(
@@ -47,14 +57,28 @@ export function useRealtimeMessages(
         )
         .order("created_at", { ascending: true });
 
-      if (!error && data) setMessages(data as RawMessage[]);
+      if (!error && data) {
+        // Load reactions for all messages
+        const msgIds = (data as RawMessage[]).map(m => m.id);
+        const { data: reactData } = await supabase
+          .from("message_reactions")
+          .select("message_id, emoji, user_id")
+          .in("message_id", msgIds);
+
+        const messagesWithReactions = (data as RawMessage[]).map(msg => ({
+          ...msg,
+          _reactions: buildReactions(reactData || [], msg.id, currentUserId!),
+        }));
+
+        setMessages(messagesWithReactions);
+      }
       setLoading(false);
     }
 
     fetchMessages();
   }, [currentUserId, partnerId]);
 
-  // Realtime inserts + updates (for read receipts)
+  // Realtime: message inserts + updates + reaction changes
   useEffect(() => {
     if (!currentUserId || !partnerId) return;
     const supabase = createClient();
@@ -72,7 +96,7 @@ export function useRealtimeMessages(
           if (isRelevant) {
             setMessages((prev) => {
               if (prev.some((m) => m.id === newMsg.id)) return prev;
-              return [...prev, newMsg];
+              return [...prev, { ...newMsg, _reactions: [] }];
             });
           }
         }
@@ -84,6 +108,29 @@ export function useRealtimeMessages(
           const updated = payload.new as RawMessage;
           setMessages((prev) =>
             prev.map((m) => (m.id === updated.id ? { ...m, ...updated } : m))
+          );
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "message_reactions" },
+        async (payload) => {
+          // Reload reactions for that message
+          const msgId = (payload.new as { message_id: string })?.message_id
+            || (payload.old as { message_id: string })?.message_id;
+          if (!msgId) return;
+
+          const { data: reactData } = await supabase
+            .from("message_reactions")
+            .select("message_id, emoji, user_id")
+            .eq("message_id", msgId);
+
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === msgId
+                ? { ...m, _reactions: buildReactions(reactData || [], msgId, currentUserId!) }
+                : m
+            )
           );
         }
       )
@@ -112,11 +159,30 @@ export function useRealtimeMessages(
   const addOptimisticMessage = useCallback((msg: RawMessage) => {
     setMessages((prev) => {
       if (prev.some((m) => m.id === msg.id)) return prev;
-      return [...prev, msg];
+      return [...prev, { ...msg, _reactions: [] }];
     });
   }, []);
 
   const clearMessages = useCallback(() => setMessages([]), []);
 
-  return { messages, loading, addOptimisticMessage, clearMessages };
+  const updateMessage = useCallback((id: string, patch: Partial<RawMessage>) => {
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+  }, []);
+
+  return { messages, loading, addOptimisticMessage, clearMessages, updateMessage };
+}
+
+function buildReactions(
+  reactData: { message_id: string; emoji: string; user_id: string }[],
+  messageId: string,
+  currentUserId: string
+): Reaction[] {
+  const forMsg = reactData.filter(r => r.message_id === messageId);
+  const grouped: Record<string, { count: number; hasReacted: boolean }> = {};
+  for (const r of forMsg) {
+    if (!grouped[r.emoji]) grouped[r.emoji] = { count: 0, hasReacted: false };
+    grouped[r.emoji].count++;
+    if (r.user_id === currentUserId) grouped[r.emoji].hasReacted = true;
+  }
+  return Object.entries(grouped).map(([emoji, v]) => ({ emoji, ...v }));
 }
