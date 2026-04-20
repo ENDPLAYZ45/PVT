@@ -342,7 +342,7 @@ export default function MessageInput({
             >
               <Paperclip size={22} />
             </motion.button>
-            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
+            <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageSelect} />
           </div>
         )}
 

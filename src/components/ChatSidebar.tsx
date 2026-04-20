@@ -89,29 +89,32 @@ export default function ChatSidebar({
           <h2>
             <ShieldCheck size={24} className="text-brand" /> PVT
           </h2>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 10 }}>
             <ThemeToggle />
-            <button
+            <motion.button
+              whileHover={{ scale: 1.1, backgroundColor: "var(--hover-bg)" }}
+              whileTap={{ scale: 0.9 }}
               className="btn btn--icon btn--secondary"
               onClick={() => setShowSearch(true)}
-              title="Search users"
             >
               <Search size={18} />
-            </button>
-            <button
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.1, backgroundColor: "var(--hover-bg)" }}
+              whileTap={{ scale: 0.9 }}
               className="btn btn--icon btn--secondary"
               onClick={() => router.push("/settings")}
-              title="Settings"
             >
               <Settings size={18} />
-            </button>
-            <button
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.1, backgroundColor: "var(--red-light)" }}
+              whileTap={{ scale: 0.9 }}
               className="btn btn--icon btn--danger"
               onClick={handleLogout}
-              title="Logout"
             >
               <LogOut size={18} />
-            </button>
+            </motion.button>
           </div>
         </div>
 

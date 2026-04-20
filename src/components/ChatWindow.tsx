@@ -200,6 +200,7 @@ export default function ChatWindow({
       <motion.div
         initial="hidden"
         animate="show"
+        className="messages-list-wrapper"
         variants={{
           show: {
             transition: {

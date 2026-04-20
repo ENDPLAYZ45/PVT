@@ -255,18 +255,26 @@ h4 { font-size: 1.25rem; }
   height: 100dvh;
   overflow: hidden;
   background: var(--bg-primary);
+  width: 100%;
 }
 
 /* ---------- Sidebar ---------- */
+.sidebar-panel {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  transition: width 0.3s var(--transition-bounce);
+  z-index: 30;
+}
+
 .sidebar {
-  width: var(--sidebar-width); min-width: var(--sidebar-width);
+  width: 100%;
   background: var(--sidebar-bg);
   border-right: 1px solid var(--border-color);
-  display: flex; flex-direction: column;
+  display: flex;
+  flex-direction: column;
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
-  z-index: 20;
 }
 .sidebar-header {
   padding: 0 24px;
@@ -359,6 +367,12 @@ h4 { font-size: 1.25rem; }
   display: flex; flex-direction: column; gap: 12px;
   background-image: radial-gradient(var(--border-color) 1px, transparent 1px);
   background-size: 32px 32px;
+}
+.messages-list-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
 }
 .message-row {
   display: flex; align-items: flex-end; gap: 10px; max-width: 75%;
@@ -1491,9 +1505,34 @@ h4 { font-size: 1.25rem; }
   border-style: dashed !important;
 }
 
-/* ========== EDIT MODE IN INPUT ========== */
-.reply-bar--edit {
-  border-left-color: var(--blue) !important;
-  background: rgba(78,205,196,0.08) !important;
+/* ========== RESPONSIVE MOBILE LAYOUT ========== */
+@media (max-width: 768px) {
+  .sidebar-panel {
+    width: 100% !important;
+    min-width: 100% !important;
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+  }
+  .sidebar-panel--hidden-mobile {
+    display: none !important;
+  }
+  .chat-area {
+    width: 100% !important;
+    min-width: 100% !important;
+  }
+  .app-layout {
+    flex-direction: column;
+  }
+  .sidebar-header, .chat-header {
+    padding: 0 16px;
+  }
+  .messages-container {
+    padding: 16px;
+  }
+  .sidebar-header {
+    padding-bottom: 20px; /* Platform watermark safe space */
+  }
+  .sidebar-footer {
+    padding-bottom: 40px; /* Platform watermark safe space */
+  }
 }
-.send-btn--edit { background: var(--blue) !important; }
