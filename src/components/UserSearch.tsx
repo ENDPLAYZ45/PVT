@@ -114,7 +114,11 @@ export default function UserSearch({ onClose, currentUserId }: UserSearchProps) 
             >
               <div className={`conversation-avatar ${user.avatar_url ? "" : getAvatarColor(user.id)}`}>
                 {user.avatar_url ? (
-                  <img src={user.avatar_url} alt="Avatar" />
+                  <img 
+                    src={user.avatar_url} 
+                    alt="Avatar" 
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} 
+                  />
                 ) : (
                   user.username.slice(0, 2).toUpperCase()
                 )}
