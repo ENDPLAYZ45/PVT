@@ -48,6 +48,9 @@ interface ChatSidebarProps {
   onClose: () => void;
 }
 
+import { motion, AnimatePresence } from "framer-motion";
+import { Search, Settings, LogOut, MessageSquare, Bell, ShieldCheck, Lock } from "lucide-react";
+
 export default function ChatSidebar({
   conversations,
   currentUserId,
@@ -69,119 +72,151 @@ export default function ChatSidebar({
 
   return (
     <>
-      <div
-        className={`sidebar-overlay ${isOpen ? "sidebar-overlay--visible" : ""}`}
-        onClick={onClose}
-      />
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="sidebar-overlay sidebar-overlay--visible"
+            onClick={onClose}
+          />
+        )}
+      </AnimatePresence>
+
       <aside className={`sidebar ${isOpen ? "sidebar--open" : ""}`}>
         <div className="sidebar-header">
           <h2>
-            <span>🔐</span> PVT
+            <ShieldCheck size={24} className="text-brand" /> PVT
           </h2>
-          <div style={{ display: "flex", gap: 6 }}>
+          <div style={{ display: "flex", gap: 8 }}>
             <ThemeToggle />
             <button
-              className="btn btn--small btn--secondary"
+              className="btn btn--icon btn--secondary"
               onClick={() => setShowSearch(true)}
               title="Search users"
             >
-              🔍
+              <Search size={18} />
             </button>
             <button
-              className="btn btn--small btn--secondary"
+              className="btn btn--icon btn--secondary"
               onClick={() => router.push("/settings")}
               title="Settings"
             >
-              ⚙️
+              <Settings size={18} />
             </button>
             <button
-              className="btn btn--small btn--danger"
+              className="btn btn--icon btn--danger"
               onClick={handleLogout}
               title="Logout"
             >
-              ↗
+              <LogOut size={18} />
             </button>
           </div>
         </div>
 
         <div className="sidebar-conversations">
           {conversations.length === 0 && (
-            <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>
-              <p style={{ fontSize: "1.5rem", marginBottom: 8 }}>💬</p>
-              <p style={{ fontWeight: 600 }}>No conversations yet</p>
-              <p style={{ fontSize: "0.82rem", marginTop: 4 }}>
-                Search for users to start chatting
-              </p>
-            </div>
-          )}
-          {conversations.map((convo) => (
-            <div
-              key={convo.user_id}
-              className={`conversation-item ${
-                activeUserId === convo.user_id ? "conversation-item--active" : ""
-              }`}
-              onClick={() => {
-                router.push(`/chat/${convo.user_id}`);
-                onClose();
-              }}
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="empty-state-container"
+              style={{ padding: 40, textAlign: "center" }}
             >
-              <div
-                className={`conversation-avatar ${convo.avatar_url ? "" : getAvatarColor(convo.user_id)}`}
-                style={{ width: "45px", height: "45px", borderRadius: "50%", flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem", fontWeight: "bold" }}
+              <div className="empty-state-icon" style={{ margin: "0 auto 20px" }}>
+                <MessageSquare size={40} />
+              </div>
+              <h2>No chats yet</h2>
+              <p>Search for users to start an encrypted conversation</p>
+            </motion.div>
+          )}
+          
+          <motion.div
+            initial="hidden"
+            animate="show"
+            variants={{
+              show: {
+                transition: {
+                  staggerChildren: 0.05
+                }
+              }
+            }}
+          >
+            {conversations.map((convo) => (
+              <motion.div
+                key={convo.user_id}
+                variants={{
+                  hidden: { opacity: 0, x: -10 },
+                  show: { opacity: 1, x: 0 }
+                }}
+                className={`conversation-item ${
+                  activeUserId === convo.user_id ? "conversation-item--active" : ""
+                }`}
+                onClick={() => {
+                  router.push(`/chat/${convo.user_id}`);
+                  onClose();
+                }}
               >
-                {convo.avatar_url ? (
-                  <img src={convo.avatar_url} alt="Avatar" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }} />
-                ) : (
-                  convo.username.slice(0, 2).toUpperCase()
-                )}
-              </div>
-              <div className="conversation-info">
-                <div className="conversation-name">{convo.username}</div>
-                <div className="conversation-preview">🔒 Encrypted message</div>
-              </div>
-              <div className="conversation-meta">
-                <span className="conversation-time">
-                  {formatTime(convo.last_message_at)}
-                </span>
-                {convo.unread && <div className="conversation-unread" />}
-              </div>
-            </div>
-          ))}
+                <div className={`conversation-avatar ${convo.avatar_url ? "" : "conversation-avatar--brand"}`}>
+                  {convo.avatar_url ? (
+                    <img src={convo.avatar_url} alt="Avatar" />
+                  ) : (
+                    convo.username.slice(0, 2).toUpperCase()
+                  )}
+                </div>
+                <div className="conversation-info">
+                  <div className="conversation-name">{convo.username}</div>
+                  <div className="conversation-preview">
+                    <Lock size={12} style={{ display: 'inline', marginRight: 4, opacity: 0.6 }} />
+                    Encrypted message
+                  </div>
+                </div>
+                <div className="conversation-meta">
+                  <span className="conversation-time">
+                    {formatTime(convo.last_message_at)}
+                  </span>
+                  {convo.unread && <div className="conversation-unread" />}
+                </div>
+              </motion.div>
+            ))}
+          </motion.div>
         </div>
 
         {/* Push Notification Controls */}
         {isSupported && (
-          <div className="sidebar-footer" style={{ 
-            padding: '12px 16px', 
-            borderTop: '1px solid var(--border-color)',
-            background: 'var(--bg-secondary)'
-          }}>
+          <div className="sidebar-footer">
             <button 
               className={`btn btn--full ${isSubscribed ? 'btn--secondary' : 'btn--primary'}`}
               onClick={() => !isSubscribed && subscribe()}
               disabled={loading || (isSubscribed && permission === 'granted')}
-              style={{ fontSize: '0.85rem', padding: '10px' }}
+              style={{ padding: '12px' }}
             >
-              {loading ? 'Processing...' : 
-               permission === 'denied' ? '🔔 Notifications Blocked' :
-               isSubscribed ? '🔔 Notifications Active' : 
-               '🔔 Enable Notifications'}
+              {loading ? 'Processing...' : (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
+                  <Bell size={16} />
+                  {permission === 'denied' ? 'Notifications Blocked' :
+                   isSubscribed ? 'Notifications Active' : 
+                   'Enable Notifications'}
+                </span>
+              )}
             </button>
             {permission === 'denied' && (
-              <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '6px', textAlign: 'center' }}>
-                Please reset notification permissions in your browser settings.
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '8px', textAlign: 'center' }}>
+                Please reset permissions in your browser.
               </p>
             )}
           </div>
         )}
       </aside>
 
-      {showSearch && (
-        <UserSearch
-          onClose={() => setShowSearch(false)}
-          currentUserId={currentUserId}
-        />
-      )}
+      <AnimatePresence>
+        {showSearch && (
+          <UserSearch
+            onClose={() => setShowSearch(false)}
+            currentUserId={currentUserId}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }

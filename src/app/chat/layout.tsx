@@ -39,6 +39,8 @@ function GlobalCallInterface() {
   );
 }
 
+import { motion, AnimatePresence } from "framer-motion";
+
 export default function ChatLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useSupabaseUser();
   const { conversations } = useConversations(user?.id);
@@ -47,7 +49,6 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
   const hasActiveChat = !!params?.userId;
 
   if (loading) {
-
     return (
       <div className="loading-center">
         <div className="spinner" />
@@ -64,23 +65,44 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
       <GlobalCallInterface />
 
       <div className="app-layout">
-        <div className={`sidebar-panel ${hasActiveChat ? "sidebar-panel--hidden-mobile" : ""} ${sidebarOpen ? "sidebar-panel--open" : ""}`}>
-          <ChatSidebar
-            conversations={conversations}
-            currentUserId={user.id}
-            isOpen={sidebarOpen}
-            onClose={() => setSidebarOpen(false)}
-          />
-        </div>
+        <AnimatePresence mode="wait">
+          {!hasActiveChat ? (
+            <motion.div
+              key="sidebar"
+              initial={{ x: -20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -20, opacity: 0 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className={`sidebar-panel ${sidebarOpen ? "sidebar-panel--open" : ""}`}
+            >
+              <ChatSidebar
+                conversations={conversations}
+                currentUserId={user.id}
+                isOpen={sidebarOpen}
+                onClose={() => setSidebarOpen(false)}
+              />
+            </motion.div>
+          ) : (
+            <div className="sidebar-panel sidebar-panel--hidden-mobile">
+              <ChatSidebar
+                conversations={conversations}
+                currentUserId={user.id}
+                isOpen={sidebarOpen}
+                onClose={() => setSidebarOpen(false)}
+              />
+            </div>
+          )}
+        </AnimatePresence>
 
-        <div className={`chat-area ${!hasActiveChat ? "chat-area--hidden-mobile" : ""}`} style={{ overflowY: "auto" }}>
-          <div className="mobile-back-bar">
-            <button className="mobile-back-btn" onClick={() => window.history.back()}>
-              ← Back
-            </button>
-          </div>
+        <motion.div 
+          layout
+          className="chat-area"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+        >
           {children}
-        </div>
+        </motion.div>
       </div>
     </CallProvider>
   );

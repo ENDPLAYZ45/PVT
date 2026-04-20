@@ -26,6 +26,9 @@ interface MessageInputProps {
   onEditSent: (id: string, newPlaintext: string, ciphertext: string, senderCiphertext: string) => void;
 }
 
+import { motion, AnimatePresence } from "framer-motion";
+import { Smile, Paperclip, Send, X, Edit3, Reply, Loader2, Check } from "lucide-react";
+
 export default function MessageInput({
   receiverId,
   currentUserId,
@@ -43,15 +46,24 @@ export default function MessageInput({
   const [imagePreview, setImagePreview] = useState<{ file: File; previewUrl: string } | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingRef = useRef(false);
   const emojiRef = useRef<HTMLDivElement>(null);
+
+  // Auto-expand textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "0px";
+      const scrollHeight = textareaRef.current.scrollHeight;
+      textareaRef.current.style.height = Math.min(Math.max(scrollHeight, 48), 150) + "px";
+    }
+  }, [text]);
 
   // Pre-fill input when entering edit mode
   useEffect(() => {
     if (editingMsg) {
       setText(editingMsg.plaintext);
-      inputRef.current?.focus();
+      textareaRef.current?.focus();
     } else {
       setText("");
     }
@@ -68,7 +80,7 @@ export default function MessageInput({
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setText(e.target.value);
     if (!typingRef.current) {
       typingRef.current = true;
@@ -84,7 +96,7 @@ export default function MessageInput({
   const insertEmoji = (emoji: string) => {
     setText(prev => prev + emoji);
     setShowEmojiPicker(false);
-    inputRef.current?.focus();
+    textareaRef.current?.focus();
   };
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -223,93 +235,145 @@ export default function MessageInput({
 
   return (
     <div className="message-input-area">
-      {error && <div className="auth-error" style={{ marginBottom: 8, fontSize: "0.82rem" }}>{error}</div>}
+      <AnimatePresence>
+        {error && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="auth-error mb-2 text-sm"
+          >
+            {error}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Edit bar */}
-      {editingMsg && (
-        <div className="reply-bar reply-bar--edit">
-          <div className="reply-bar-content">
-            <span className="reply-bar-icon">✏️</span>
-            <span className="reply-bar-text">Editing: {editingMsg.plaintext.slice(0, 60)}</span>
-          </div>
-          <button className="reply-bar-close" onClick={() => { onCancelEdit(); setText(""); }}>✕</button>
-        </div>
-      )}
+      <AnimatePresence>
+        {editingMsg && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="reply-bar reply-bar--edit"
+          >
+            <div className="reply-bar-content">
+              <Edit3 size={16} className="text-blue" />
+              <span className="reply-bar-text">Editing: {editingMsg.plaintext.slice(0, 60)}</span>
+            </div>
+            <button className="reply-bar-close" onClick={() => { onCancelEdit(); setText(""); }}>
+              <X size={16} />
+            </button>
+          </motion.div>
+        )}
 
-      {/* Reply bar */}
-      {replyTo && !editingMsg && (
-        <div className="reply-bar">
-          <div className="reply-bar-content">
-            <span className="reply-bar-icon">↩</span>
-            <span className="reply-bar-text">
-              {replyTo._plaintext ?? "Message"}
-            </span>
-          </div>
-          <button className="reply-bar-close" onClick={onCancelReply}>✕</button>
-        </div>
-      )}
+        {replyTo && !editingMsg && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="reply-bar"
+          >
+            <div className="reply-bar-content">
+              <Reply size={16} className="text-brand" />
+              <span className="reply-bar-text">{replyTo._plaintext ?? "Message"}</span>
+            </div>
+            <button className="reply-bar-close" onClick={onCancelReply}>
+              <X size={16} />
+            </button>
+          </motion.div>
+        )}
 
-      {/* Image preview */}
-      {imagePreview && (
-        <div className="image-preview-bar" style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", background: "var(--bg-chat)", borderTop: "1px solid var(--border-color)" }}>
-          <img src={imagePreview.previewUrl} alt="Preview" className="image-preview-thumb" style={{ width: "60px", height: "60px", objectFit: "cover", borderRadius: "6px", flexShrink: 0 }} />
-          <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: "0.85rem", color: "var(--text-muted)" }}>{imagePreview.file.name}</span>
-          <button className="reply-bar-close" onClick={cancelImage} style={{ flexShrink: 0, background: "rgba(255,0,0,0.1)", color: "red", border: "none", width: "24px", height: "24px", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.8rem" }}>✕</button>
-        </div>
-      )}
+        {imagePreview && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="image-preview-bar"
+          >
+            <div className="flex items-center gap-3 p-2 bg-secondary/50 rounded-xl border border-border mt-1">
+              <img src={imagePreview.previewUrl} alt="Preview" className="w-14 h-14 object-cover rounded-lg" />
+              <span className="flex-1 truncate text-xs text-muted-foreground">{imagePreview.file.name}</span>
+              <button className="w-8 h-8 flex items-center justify-center bg-red-100 text-red-500 rounded-full hover:bg-red-200 transition-colors" onClick={cancelImage}>
+                <X size={16} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      <div className="message-input-wrapper" style={{ position: "relative" }}>
-        {/* Emoji picker button */}
-        <div ref={emojiRef} style={{ position: "relative" }}>
-          <button
+      <div className="message-input-wrapper mt-2">
+        <div ref={emojiRef} className="relative flex items-end">
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
             className="attach-btn"
             onClick={() => setShowEmojiPicker(prev => !prev)}
-            title="Emoji"
             disabled={sending}
             type="button"
           >
-            😊
-          </button>
-          {showEmojiPicker && (
-            <div className="input-emoji-picker">
-              {INPUT_EMOJIS.map(emoji => (
-                <button key={emoji} className="emoji-picker-btn" onClick={() => insertEmoji(emoji)}>
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          )}
+            <Smile size={24} />
+          </motion.button>
+          <AnimatePresence>
+            {showEmojiPicker && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                className="input-emoji-picker"
+              >
+                {INPUT_EMOJIS.map(emoji => (
+                  <button key={emoji} className="emoji-picker-btn" onClick={() => insertEmoji(emoji)}>
+                    {emoji}
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
-        {/* Image attach button (only when not editing) */}
         {!editingMsg && (
-          <>
-            <button className="attach-btn" onClick={() => fileInputRef.current?.click()} title="Send an image" disabled={sending}>
-              📎
-            </button>
-            <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleImageSelect} />
-          </>
+          <div className="flex items-end">
+            <motion.button 
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              className="attach-btn" 
+              onClick={() => fileInputRef.current?.click()} 
+              disabled={sending}
+            >
+              <Paperclip size={22} />
+            </motion.button>
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
+          </div>
         )}
 
-        <input
-          ref={inputRef}
+        <textarea
+          ref={textareaRef}
           className="input"
-          type="text"
           placeholder={editingMsg ? "Edit message..." : imagePreview ? "Add a caption..." : "Type an encrypted message..."}
           value={text}
           onChange={handleTextChange}
           onKeyDown={handleKeyDown}
           onBlur={handleBlur}
           disabled={sending}
+          rows={1}
+          style={{ resize: "none", overflow: "hidden" }}
         />
-        <button
+
+        <motion.button
+          whileHover={{ scale: (text.trim() || imagePreview) ? 1.1 : 1 }}
+          whileTap={{ scale: (text.trim() || imagePreview) ? 0.9 : 1 }}
           className={`send-btn ${editingMsg ? "send-btn--edit" : ""}`}
           onClick={handleSend}
           disabled={(!text.trim() && !imagePreview) || sending}
-          title={editingMsg ? "Save edit" : "Send encrypted message"}
         >
-          {sending ? "⏳" : editingMsg ? "✓" : "→"}
-        </button>
+          {sending ? (
+            <Loader2 size={20} className="animate-spin" />
+          ) : editingMsg ? (
+            <Check size={20} />
+          ) : (
+            <Send size={20} />
+          )}
+        </motion.button>
       </div>
     </div>
   );
