@@ -29,31 +29,43 @@ export async function POST(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const [{ data: sender }, { data: sub }] = await Promise.all([
+  // Fetch sender info and ALL subscriptions for the receiver
+  const [{ data: sender }, { data: subs }] = await Promise.all([
     supabaseAdmin.from("users").select("username").eq("id", record.sender_id).single(),
-    supabaseAdmin.from("push_subscriptions").select("subscription").eq("user_id", record.receiver_id).single(),
+    supabaseAdmin.from("push_subscriptions").select("subscription, endpoint").eq("user_id", record.receiver_id),
   ]);
 
-  if (!sub?.subscription) return NextResponse.json({ ok: true, reason: "No subscription" });
+  if (!subs || subs.length === 0) {
+    return NextResponse.json({ ok: true, reason: "No subscriptions" });
+  }
 
   const senderName = sender?.username ?? "Someone";
   const isImage = record.message_type === "image";
   const messagePreview = isImage ? "📎 Sent an image" : "🔒 New encrypted message";
 
-  try {
-    await webpush.sendNotification(
-      sub.subscription,
-      JSON.stringify({
-        title: `PVT — ${senderName}`,
-        body: messagePreview,
-        url: `/chat/${record.sender_id}`,
-        tag: `msg-${record.sender_id}`,
-      })
-    );
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    console.error("Push error:", err);
-    await supabaseAdmin.from("push_subscriptions").delete().eq("user_id", record.receiver_id);
-    return NextResponse.json({ ok: true, reason: "Subscription expired" });
-  }
+  const payload = JSON.stringify({
+    title: `PVT — ${senderName}`,
+    body: messagePreview,
+    url: `/chat/${record.sender_id}`,
+    tag: `msg-${record.sender_id}`,
+  });
+
+  // Send to all devices
+  const results = await Promise.allSettled(
+    subs.map((sub) => 
+      webpush.sendNotification(sub.subscription, payload)
+        .catch(async (err) => {
+          // If status is 410 (Gone) or 404 (Not Found), the subscription is expired
+          if (err.statusCode === 410 || err.statusCode === 404) {
+            await supabaseAdmin.from("push_subscriptions").delete().eq("endpoint", sub.endpoint);
+          }
+          throw err;
+        })
+    )
+  );
+
+  const failedCount = results.filter(r => r.status === "rejected").length;
+  console.log(`Push sent: ${results.length - failedCount} succeeded, ${failedCount} failed.`);
+
+  return NextResponse.json({ ok: true, sent: results.length, failed: failedCount });
 }

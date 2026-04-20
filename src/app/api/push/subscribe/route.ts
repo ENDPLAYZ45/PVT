@@ -24,13 +24,20 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { subscription } = await req.json();
-  if (!subscription) return NextResponse.json({ error: "No subscription" }, { status: 400 });
+  if (!subscription || !subscription.endpoint) {
+    return NextResponse.json({ error: "Invalid subscription" }, { status: 400 });
+  }
 
+  // Support multiple devices by using (user_id, endpoint) as the unique constraint
+  // We upsert based on the combination of user and device endpoint
   await supabase.from("push_subscriptions").upsert({
     user_id: user.id,
     subscription,
+    endpoint: subscription.endpoint,
     updated_at: new Date().toISOString(),
-  }, { onConflict: "user_id" });
+  }, { 
+    onConflict: "user_id, endpoint" 
+  });
 
   return NextResponse.json({ ok: true });
 }

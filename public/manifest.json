@@ -1,5 +1,6 @@
 {
   "id": "app.pvt.chat",
+  "gcm_sender_id": "103953800507",
   "name": "PVT — Private Encrypted Chat",
   "short_name": "PVT",
   "description": "End-to-end encrypted private messaging. Your messages, your keys, your privacy.",

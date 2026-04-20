@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import UserSearch from "./UserSearch";
 import { createClient } from "@/lib/supabase/client";
 import ThemeToggle from "./ThemeToggle";
-
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 const AVATAR_COLORS = [
   "conversation-avatar--yellow",
@@ -59,6 +59,8 @@ export default function ChatSidebar({
   const params = useParams();
   const activeUserId = params?.userId as string | undefined;
 
+  const { isSupported, permission, isSubscribed, subscribe, loading } = usePushNotifications(currentUserId);
+
   const handleLogout = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
@@ -100,7 +102,6 @@ export default function ChatSidebar({
               ↗
             </button>
           </div>
-
         </div>
 
         <div className="sidebar-conversations">
@@ -147,6 +148,32 @@ export default function ChatSidebar({
             </div>
           ))}
         </div>
+
+        {/* Push Notification Controls */}
+        {isSupported && (
+          <div className="sidebar-footer" style={{ 
+            padding: '12px 16px', 
+            borderTop: '1px solid var(--border-color)',
+            background: 'var(--bg-secondary)'
+          }}>
+            <button 
+              className={`btn btn--full ${isSubscribed ? 'btn--secondary' : 'btn--primary'}`}
+              onClick={() => !isSubscribed && subscribe()}
+              disabled={loading || (isSubscribed && permission === 'granted')}
+              style={{ fontSize: '0.85rem', padding: '10px' }}
+            >
+              {loading ? 'Processing...' : 
+               permission === 'denied' ? '🔔 Notifications Blocked' :
+               isSubscribed ? '🔔 Notifications Active' : 
+               '🔔 Enable Notifications'}
+            </button>
+            {permission === 'denied' && (
+              <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '6px', textAlign: 'center' }}>
+                Please reset notification permissions in your browser settings.
+              </p>
+            )}
+          </div>
+        )}
       </aside>
 
       {showSearch && (

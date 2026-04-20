@@ -46,10 +46,8 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
   const params = useParams();
   const hasActiveChat = !!params?.userId;
 
-  // Register service worker + subscribe to push notifications
-  usePushNotifications(user?.id);
-
   if (loading) {
+
     return (
       <div className="loading-center">
         <div className="spinner" />
