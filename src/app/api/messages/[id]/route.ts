@@ -7,8 +7,9 @@ export const dynamic = "force-dynamic";
 // DELETE /api/messages/[id] — soft-delete a message
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const cookieStore = await cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,8 +23,8 @@ export async function DELETE(
   const { error } = await supabase
     .from("messages")
     .update({ is_deleted: true, ciphertext: "__DELETED__", sender_ciphertext: "__DELETED__" })
-    .eq("id", params.id)
-    .eq("sender_id", user.id); // only own messages
+    .eq("id", id)
+    .eq("sender_id", user.id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
@@ -32,8 +33,9 @@ export async function DELETE(
 // PATCH /api/messages/[id] — edit a message (re-encrypt)
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const cookieStore = await cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -52,8 +54,8 @@ export async function PATCH(
   const { error } = await supabase
     .from("messages")
     .update({ ciphertext, sender_ciphertext, edited_at: new Date().toISOString() })
-    .eq("id", params.id)
-    .eq("sender_id", user.id); // only own messages
+    .eq("id", id)
+    .eq("sender_id", user.id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
