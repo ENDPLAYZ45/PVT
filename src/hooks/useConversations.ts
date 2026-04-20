@@ -18,9 +18,9 @@ export function useConversations(currentUserId: string | undefined) {
   useEffect(() => {
     if (!currentUserId) return;
 
-    async function fetchConversations() {
-      const supabase = createClient();
+    const supabase = createClient();
 
+    async function fetchConversations() {
       // Get all messages involving the current user
       const { data: messages, error } = await supabase
         .from("messages")
@@ -86,6 +86,26 @@ export function useConversations(currentUserId: string | undefined) {
     }
 
     fetchConversations();
+
+    // Subscribe to ANY message involving the current user for real-time sidebar updates
+    const channel = supabase
+      .channel(`sidebar:${currentUserId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "messages",
+        },
+        () => {
+          fetchConversations();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [currentUserId]);
 
   return { conversations, loading, setConversations };

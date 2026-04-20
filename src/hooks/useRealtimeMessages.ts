@@ -84,19 +84,25 @@ export function useRealtimeMessages(
     const supabase = createClient();
 
     const channel = supabase
-      .channel(`messages:${currentUserId}:${partnerId}`)
+      .channel(`chat:${currentUserId}:${partnerId}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
+        { 
+          event: "INSERT", 
+          schema: "public", 
+          table: "messages"
+        },
         (payload) => {
           const newMsg = payload.new as RawMessage;
           const isRelevant =
             (newMsg.sender_id === currentUserId && newMsg.receiver_id === partnerId) ||
             (newMsg.sender_id === partnerId && newMsg.receiver_id === currentUserId);
+          
           if (isRelevant) {
             setMessages((prev) => {
               if (prev.some((m) => m.id === newMsg.id)) return prev;
-              return [...prev, { ...newMsg, _reactions: [] }];
+              const next = [...prev, { ...newMsg, _reactions: [] }];
+              return next.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
             });
           }
         }
@@ -115,7 +121,6 @@ export function useRealtimeMessages(
         "postgres_changes",
         { event: "*", schema: "public", table: "message_reactions" },
         async (payload) => {
-          // Reload reactions for that message
           const msgId = (payload.new as { message_id: string })?.message_id
             || (payload.old as { message_id: string })?.message_id;
           if (!msgId) return;
@@ -134,10 +139,16 @@ export function useRealtimeMessages(
           );
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[Realtime] Subscribed to chat channel');
+        }
+      });
 
     channelRef.current = channel;
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [currentUserId, partnerId]);
 
   // Mark messages as read when chat is open
