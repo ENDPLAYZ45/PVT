@@ -78,11 +78,25 @@ export function useRealtimeMessages(
         .in("message_id", msgIds.length ? msgIds : ["00000000-0000-0000-0000-000000000000"]);
 
       setMessages(prev => {
+        const lastPrev = prev[prev.length - 1];
+        const lastNew  = sorted[sorted.length - 1];
+
+        // If the most recent message ID and count are identical, bail out —
+        // returning `prev` keeps the same object reference so React skips
+        // the re-render entirely (no flash, no scroll jump, no extra decryption).
+        if (
+          prev.length === sorted.length &&
+          lastPrev?.id === lastNew?.id &&
+          lastPrev?.read_at === lastNew?.read_at &&
+          lastPrev?.delivered_at === lastNew?.delivered_at
+        ) {
+          return prev;
+        }
+
         const prevMap = new Map(prev.map(m => [m.id, m]));
         return sorted.map(msg => ({
           ...msg,
           _reactions: buildReactions(reactData || [], msg.id, currentUserId!),
-          // Keep _isNew only for genuinely new messages (not in previous state)
           _isNew: !prevMap.has(msg.id),
         }));
       });

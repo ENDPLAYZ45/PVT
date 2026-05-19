@@ -214,12 +214,33 @@ export default function ChatWindow({
     };
   }, [messages, currentUserId, privateKey]);
 
-  // Auto-scroll to bottom when new messages arrive
+  // Ref for smooth-scroll anchor at bottom of message list
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const prevDecryptedCount = useRef(0);
+
+  // Smooth-scroll to bottom ONLY when genuinely new messages arrive
+  // (not on polling refreshes that returned the same data)
   useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    const hasNewMsg = decryptedMessages.some(m => m._isNew);
+    const countGrew = decryptedMessages.length > prevDecryptedCount.current;
+    prevDecryptedCount.current = decryptedMessages.length;
+
+    if (hasNewMsg || countGrew) {
+      // Small delay so the DOM has painted the new bubble
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      });
     }
-  }, [decryptedMessages, partnerPresence.isTyping]);
+  }, [decryptedMessages]);
+
+  // Scroll to bottom when typing indicator appears
+  useEffect(() => {
+    if (partnerPresence.isTyping) {
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      });
+    }
+  }, [partnerPresence.isTyping]);
 
   // Close menu on outside click
   useEffect(() => {
@@ -381,12 +402,9 @@ export default function ChatWindow({
           <span>Messages are end-to-end encrypted</span>
         </div>
 
-        <motion.div
-          initial="hidden"
-          animate="show"
-          className="messages-list-wrapper"
-          variants={{ show: { transition: { staggerChildren: 0.04 } } }}
-        >
+        {/* AnimatePresence initial={false} means existing messages NEVER
+            re-animate — only brand-new messages get the entry animation */}
+        <AnimatePresence initial={false}>
           {decryptedMessages.map((msg, idx) => {
             const isSent = msg.sender_id === currentUserId;
             const isLastSent = lastSentMsg?.id === msg.id;
@@ -424,10 +442,13 @@ export default function ChatWindow({
             return (
               <motion.div
                 key={msg.id}
-                variants={
+                layout
+                initial={isNew ? { opacity: 0, y: 24, scale: 0.95 } : false}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={
                   isNew
-                    ? { hidden: { opacity: 0, y: 20, scale: 0.97 }, show: { opacity: 1, y: 0, scale: 1 } }
-                    : { hidden: { opacity: 0, y: 6, scale: 0.98 }, show: { opacity: 1, y: 0, scale: 1 } }
+                    ? { type: "spring", stiffness: 420, damping: 32, mass: 0.8 }
+                    : { duration: 0 }
                 }
                 className={`message-row ${isSent ? "message-row--sent" : "message-row--received"} ${isGrouped ? "message-row--grouped" : ""}`}
                 style={{ position: "relative" }}
@@ -582,8 +603,9 @@ export default function ChatWindow({
               </motion.div>
             );
           })}
-        </motion.div>
-
+          </AnimatePresence>
+          {/* Invisible anchor for smooth scrolling */}
+          <div ref={messagesEndRef} />
         {/* Typing indicator */}
         <AnimatePresence>
           {partnerPresence.isTyping && (
