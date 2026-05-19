@@ -124,7 +124,22 @@ export function useRealtimeMessages(
     if (!currentUserId || !partnerId) return;
     const supabase = createClient();
 
-    const handleNewMessage = (newMsg: RawMessage) => {
+    // Fetch the FULL row from DB instead of relying on payload.new.
+    // payload.new can be missing fields if REPLICA IDENTITY wasn't set at insert time.
+    const handleNewMessageById = async (id: string) => {
+      const { data, error } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("id", id)
+        .single();
+
+      if (error || !data) {
+        console.warn("[Realtime] Could not fetch message", id, error?.message);
+        return;
+      }
+
+      const newMsg = data as RawMessage;
+
       // Guard: only process messages for this exact conversation
       const isRelevant =
         (newMsg.sender_id === currentUserId && newMsg.receiver_id === partnerId) ||
@@ -170,7 +185,10 @@ export function useRealtimeMessages(
           table: "messages",
           filter: `receiver_id=eq.${currentUserId}`,
         },
-        payload => handleNewMessage(payload.new as RawMessage)
+        payload => {
+          const id = (payload.new as { id: string })?.id;
+          if (id) handleNewMessageById(id);
+        }
       )
       // ── INSERT: messages I sent (for optimistic reconciliation) ──────────
       .on(
@@ -181,7 +199,10 @@ export function useRealtimeMessages(
           table: "messages",
           filter: `sender_id=eq.${currentUserId}`,
         },
-        payload => handleNewMessage(payload.new as RawMessage)
+        payload => {
+          const id = (payload.new as { id: string })?.id;
+          if (id) handleNewMessageById(id);
+        }
       )
       // ── UPDATE: messages where I am receiver (read/delivered receipts) ───
       .on(

@@ -80,74 +80,137 @@ export default function ChatWindow({
   const swipeRef = useRef<Record<string, { startX: number; startY: number; active: boolean }>>({});
   const [swipeActive, setSwipeActive] = useState<string | null>(null);
 
-  // ── Decrypt all messages when messages/key changes ──
+  // Cache of already-decrypted messages keyed by ID — prevents re-decrypting
+  // the same message on every re-render and eliminates the race condition where
+  // a stale async run overwrites state without the latest message.
+  const decryptedCache = useRef<Map<string, DecryptedMessage>>(new Map());
+  const objectUrlCache = useRef<Map<string, string>>(new Map()); // msgId → objectUrl
+
+  // ── Decrypt new messages incrementally (never re-decrypts already-cached ones) ──
   useEffect(() => {
-    const objectUrls: string[] = [];
+    if (!privateKey && messages.some(m => !m._plaintext && m.ciphertext !== PANIC_MARKER && !m.is_deleted)) {
+      // Key not ready yet — wait for next render when privateKey loads
+      return;
+    }
 
-    async function decryptAll() {
-      const results: DecryptedMessage[] = [];
+    let cancelled = false;
 
-      for (const msg of messages) {
+    async function decryptIncremental() {
+      const cache = decryptedCache.current;
+
+      // Remove cache entries for messages that are no longer in the list
+      const currentIds = new Set(messages.map(m => m.id));
+      for (const id of cache.keys()) {
+        if (!currentIds.has(id)) {
+          const old = cache.get(id);
+          if (old?.imageObjectUrl) {
+            URL.revokeObjectURL(old.imageObjectUrl);
+            objectUrlCache.current.delete(id);
+          }
+          cache.delete(id);
+        }
+      }
+
+      // Find messages not yet cached (or whose metadata changed: edit/delete/reactions)
+      const toDecrypt = messages.filter(m => {
+        const cached = cache.get(m.id);
+        if (!cached) return true;
+        // Re-process if metadata that doesn't require crypto changed
+        if (m.is_deleted !== cached.is_deleted) return true;
+        if (m.edited_at !== cached.edited_at) return true;
+        if (m._plaintext && m._plaintext !== cached.plaintext) return true;
+        if (JSON.stringify(m._reactions) !== JSON.stringify(cached._reactions)) return true;
+        if (m.read_at !== cached.read_at) return true;
+        if (m.delivered_at !== cached.delivered_at) return true;
+        return false;
+      });
+
+      for (const msg of toDecrypt) {
+        if (cancelled) return;
         const isSent = msg.sender_id === currentUserId;
 
         if (msg.ciphertext === PANIC_MARKER) {
-          results.push({ ...msg, plaintext: PANIC_MARKER, decryptFailed: false, isPanic: true });
+          cache.set(msg.id, { ...msg, plaintext: PANIC_MARKER, decryptFailed: false, isPanic: true });
           continue;
         }
 
         if (msg.is_deleted) {
-          results.push({ ...msg, plaintext: "__DELETED__", decryptFailed: false, isPanic: false });
+          cache.set(msg.id, { ...msg, plaintext: "__DELETED__", decryptFailed: false, isPanic: false });
           continue;
         }
 
+        // Optimistic message — already has plaintext
         if (msg._plaintext) {
-          results.push({ ...msg, plaintext: msg._plaintext, decryptFailed: false, isPanic: false });
+          cache.set(msg.id, { ...msg, plaintext: msg._plaintext, decryptFailed: false, isPanic: false });
           continue;
         }
 
-        // Image messages
+        // Metadata-only update on already-cached message (read_at, reactions, etc.)
+        const existing = cache.get(msg.id);
+        if (existing) {
+          cache.set(msg.id, { ...existing, ...msg, plaintext: existing.plaintext, imageObjectUrl: existing.imageObjectUrl });
+          continue;
+        }
+
+        // ── Image messages ──────────────────────────────────────────────────
         if (msg.message_type === "image" && msg.image_url && privateKey) {
           try {
             const encryptedAesKey = isSent ? msg.image_aes_key_sender : msg.image_aes_key;
             if (!encryptedAesKey || !msg.image_iv) throw new Error("No key");
-
             const aesKeyString = await decryptMessage(privateKey, encryptedAesKey);
+            if (cancelled) return;
             const resp = await fetch(msg.image_url);
             const encryptedData = await resp.arrayBuffer();
+            if (cancelled) return;
             const objectUrl = await decryptImageBlob(encryptedData, aesKeyString, msg.image_iv, msg.image_mime || "image/jpeg");
-            objectUrls.push(objectUrl);
-            results.push({ ...msg, plaintext: "[Image]", decryptFailed: false, isPanic: false, imageObjectUrl: objectUrl });
+            if (cancelled) { URL.revokeObjectURL(objectUrl); return; }
+            objectUrlCache.current.set(msg.id, objectUrl);
+            cache.set(msg.id, { ...msg, plaintext: "[Image]", decryptFailed: false, isPanic: false, imageObjectUrl: objectUrl });
           } catch {
-            // Hide failed images
+            // failed image — don't add to cache so it retries next render
           }
           continue;
         }
 
-        // Text messages
+        // ── Text messages ───────────────────────────────────────────────────
+        if (!privateKey) continue;
+
         if (isSent) {
-          if (privateKey && msg.sender_ciphertext) {
+          if (msg.sender_ciphertext) {
             try {
               const plaintext = await decryptMessage(privateKey, msg.sender_ciphertext);
-              results.push({ ...msg, plaintext, decryptFailed: false, isPanic: false });
-            } catch { /* hide */ }
+              if (cancelled) return;
+              cache.set(msg.id, { ...msg, plaintext, decryptFailed: false, isPanic: false });
+            } catch {
+              console.warn("[ChatWindow] Decrypt failed for sent message", msg.id);
+            }
           }
         } else {
-          if (privateKey) {
-            try {
-              const plaintext = await decryptMessage(privateKey, msg.ciphertext);
-              results.push({ ...msg, plaintext, decryptFailed: false, isPanic: false });
-            } catch { /* hide */ }
+          try {
+            const plaintext = await decryptMessage(privateKey, msg.ciphertext);
+            if (cancelled) return;
+            cache.set(msg.id, { ...msg, plaintext, decryptFailed: false, isPanic: false });
+          } catch {
+            console.warn("[ChatWindow] Decrypt failed for received message", msg.id);
           }
         }
       }
 
-      setDecryptedMessages(results);
+      if (cancelled) return;
+
+      // Build the final ordered list from the cache
+      const result: DecryptedMessage[] = [];
+      for (const msg of messages) {
+        const d = cache.get(msg.id);
+        if (d) result.push(d);
+      }
+      setDecryptedMessages(result);
     }
 
-    decryptAll();
+    decryptIncremental();
 
     return () => {
-      objectUrls.forEach(url => URL.revokeObjectURL(url));
+      cancelled = true;
     };
   }, [messages, currentUserId, privateKey]);
 
