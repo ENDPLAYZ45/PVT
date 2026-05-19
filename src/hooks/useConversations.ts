@@ -8,7 +8,7 @@ interface Conversation {
   username: string;
   avatar_url?: string;
   last_message_at: string;
-  unread: boolean;
+  unread: number; // now a count, not a boolean
 }
 
 export function useConversations(currentUserId: string | undefined) {
@@ -24,7 +24,7 @@ export function useConversations(currentUserId: string | undefined) {
       // Get all messages involving the current user
       const { data: messages, error } = await supabase
         .from("messages")
-        .select("sender_id, receiver_id, created_at, delivered_at")
+        .select("sender_id, receiver_id, created_at, read_at")
         .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`)
         .order("created_at", { ascending: false });
 
@@ -33,10 +33,10 @@ export function useConversations(currentUserId: string | undefined) {
         return;
       }
 
-      // Group by conversation partner
+      // Group by conversation partner — track last message time and unread count
       const partnerMap = new Map<
         string,
-        { last_message_at: string; unread: boolean }
+        { last_message_at: string; unread: number }
       >();
 
       for (const msg of messages) {
@@ -44,12 +44,16 @@ export function useConversations(currentUserId: string | undefined) {
           msg.sender_id === currentUserId ? msg.receiver_id : msg.sender_id;
 
         if (!partnerMap.has(partnerId)) {
-          const isUnread =
-            msg.receiver_id === currentUserId && !msg.delivered_at;
           partnerMap.set(partnerId, {
             last_message_at: msg.created_at,
-            unread: isUnread,
+            unread: 0,
           });
+        }
+
+        // Count unread: messages sent TO me that I haven't read yet
+        if (msg.receiver_id === currentUserId && !msg.read_at) {
+          const entry = partnerMap.get(partnerId)!;
+          entry.unread++;
         }
       }
 
@@ -66,12 +70,12 @@ export function useConversations(currentUserId: string | undefined) {
         .select("id, username, avatar_url")
         .in("id", partnerIds);
 
-      const convos: Conversation[] = (users || []).map((u) => ({
+      const convos: Conversation[] = (users || []).map(u => ({
         user_id: u.id,
         username: u.username,
         avatar_url: u.avatar_url,
         last_message_at: partnerMap.get(u.id)?.last_message_at || "",
-        unread: partnerMap.get(u.id)?.unread || false,
+        unread: partnerMap.get(u.id)?.unread || 0,
       }));
 
       // Sort by most recent
@@ -87,7 +91,7 @@ export function useConversations(currentUserId: string | undefined) {
 
     fetchConversations();
 
-    // Subscribe to ANY message involving the current user for real-time sidebar updates
+    // Subscribe to messages involving the current user for real-time sidebar updates
     const channel = supabase
       .channel(`sidebar:${currentUserId}`)
       .on(
@@ -96,9 +100,21 @@ export function useConversations(currentUserId: string | undefined) {
           event: "*",
           schema: "public",
           table: "messages",
+          filter: `sender_id=eq.${currentUserId}`,
         },
-        (payload) => {
-          console.log('[Realtime] Sidebar message event:', payload.event);
+        (_payload: any) => {
+          fetchConversations();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "messages",
+          filter: `receiver_id=eq.${currentUserId}`,
+        },
+        (_payload: any) => {
           fetchConversations();
         }
       )

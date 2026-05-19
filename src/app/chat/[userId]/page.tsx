@@ -6,12 +6,14 @@ import { useSupabaseUser } from "@/hooks/useSupabaseUser";
 import { usePrivateKey } from "@/hooks/usePrivateKey";
 import { useRealtimeMessages, RawMessage } from "@/hooks/useRealtimeMessages";
 import { usePresence } from "@/hooks/usePresence";
+import { useNotificationSound } from "@/hooks/useNotificationSound";
 import { createClient } from "@/lib/supabase/client";
 import ChatWindow, { DecryptedMessage } from "@/components/ChatWindow";
 import MessageInput from "@/components/MessageInput";
 import EncryptionBadge from "@/components/EncryptionBadge";
 import BlockButton from "@/components/BlockButton";
 import PanicButton from "@/components/PanicButton";
+import SkeletonMessages from "@/components/SkeletonMessages";
 import { useCallContext } from "@/components/CallProvider";
 
 const AVATAR_COLORS = [
@@ -32,8 +34,10 @@ export default function ConversationPage() {
   const partnerId = params?.userId as string;
   const { user } = useSupabaseUser();
   const { privateKey, hasKey } = usePrivateKey(user?.id);
-  const { messages, loading, addOptimisticMessage, clearMessages, updateMessage } = useRealtimeMessages(user?.id, partnerId);
+  const { messages, loading, hasMore, loadMore, addOptimisticMessage, clearMessages, updateMessage } = useRealtimeMessages(user?.id, partnerId);
   const { partnerPresence, sendTyping } = usePresence(user?.id ?? "", partnerId);
+  const { playPop } = useNotificationSound();
+  const prevMsgCount = useRef(0);
   const [partnerName, setPartnerName] = useState("");
   const [partnerAvatar, setPartnerAvatar] = useState("");
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -57,6 +61,18 @@ export default function ConversationPage() {
     }
     fetchPartner();
   }, [partnerId]);
+
+  // Play notification sound when new incoming messages arrive
+  useEffect(() => {
+    if (!user?.id || messages.length === 0) return;
+    const newIncoming = messages.filter(
+      m => m.sender_id !== user.id && m._isNew
+    );
+    if (newIncoming.length > 0 && messages.length > prevMsgCount.current) {
+      playPop();
+    }
+    prevMsgCount.current = messages.length;
+  }, [messages, user?.id, playPop]);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -165,7 +181,7 @@ export default function ConversationPage() {
       {/* ── Messages ── */}
       <div className="conversation-messages">
         {loading ? (
-          <div className="loading-center"><div className="spinner" /></div>
+          <SkeletonMessages />
         ) : (
           <ChatWindow
             messages={messages}
@@ -177,6 +193,8 @@ export default function ConversationPage() {
             onReply={setReplyTo}
             onDelete={handleDelete}
             onEdit={setEditingMsg}
+            hasMore={hasMore}
+            onLoadMore={loadMore}
           />
         )}
       </div>

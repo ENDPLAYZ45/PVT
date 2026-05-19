@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { receiver_id, ciphertext } = body;
+    const { receiver_id, ciphertext, sender_ciphertext } = body;
 
     if (!receiver_id || !ciphertext) {
       return NextResponse.json(
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
       .select("blocker_id")
       .eq("blocker_id", receiver_id)
       .eq("blocked_id", user.id)
-      .single();
+      .maybeSingle();
 
     if (blocked) {
       return NextResponse.json(
@@ -46,6 +46,7 @@ export async function POST(request: NextRequest) {
         sender_id: user.id,
         receiver_id,
         ciphertext,
+        sender_ciphertext,
       })
       .select()
       .single();

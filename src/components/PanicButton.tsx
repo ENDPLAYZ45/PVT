@@ -17,25 +17,28 @@ export default function PanicButton({ currentUserId, partnerId }: PanicButtonPro
     if (triggered.current) return;
     triggered.current = true;
 
-    // 1. Replace URL and redirect instantly to the notes decoy
-    //    replaceState first so browser history doesn't show /chat
-    window.history.replaceState(null, "", "/notes");
-    router.replace("/notes");
-
-    // 2. Notify partner silently in background
-    void (async () => {
+    // 1. Notify partner silently in background (with short timeout)
+    const notifyPartner = async () => {
       try {
         const supabase = createClient();
-        await supabase.from("messages").insert({
-          sender_id: currentUserId,
-          receiver_id: partnerId,
-          ciphertext: "__SYSTEM__PANIC__",
-          sender_ciphertext: "__SYSTEM__PANIC__",
-        });
+        await Promise.race([
+          supabase.from("messages").insert({
+            sender_id: currentUserId,
+            receiver_id: partnerId,
+            ciphertext: "__SYSTEM__PANIC__",
+            sender_ciphertext: "__SYSTEM__PANIC__",
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 500))
+        ]);
       } catch {
         // Silent
       }
-    })();
+      
+      // 2. Redirect instantly to the notes decoy
+      router.replace("/notes");
+    };
+
+    notifyPartner();
   };
 
   return (

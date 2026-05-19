@@ -71,7 +71,7 @@ CREATE POLICY "Users can send messages"
 CREATE POLICY "Receiver can mark delivered"
   ON public.messages FOR UPDATE
   USING (auth.uid() = receiver_id)
-  WITH CHECK (auth.uid() = receiver_id);
+  WITH CHECK (auth.uid() = receiver_id AND ciphertext = OLD.ciphertext);
 
 -- Index for fast conversation lookups
 CREATE INDEX idx_messages_sender ON public.messages(sender_id, created_at DESC);

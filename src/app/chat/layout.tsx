@@ -8,7 +8,6 @@ import ChatSidebar from "@/components/ChatSidebar";
 import KeyWarningBanner from "@/components/KeyWarningBanner";
 import { CallProvider, useCallContext } from "@/components/CallProvider";
 import CallInterface from "@/components/CallInterface";
-import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 /** Renders the global call overlay — must be inside CallProvider */
 function GlobalCallInterface() {

@@ -34,7 +34,11 @@ export interface RawMessage {
   _plaintext?: string;
   // Reactions (loaded client-side)
   _reactions?: Reaction[];
+  // Local-only: marks a freshly sent optimistic message for enter animation
+  _isNew?: boolean;
 }
+
+const PAGE_SIZE = 50;
 
 export function useRealtimeMessages(
   currentUserId: string | undefined,
@@ -42,35 +46,42 @@ export function useRealtimeMessages(
 ) {
   const [messages, setMessages] = useState<RawMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
+  const oldestCreatedAt = useRef<string | null>(null);
   const channelRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
 
+  // Initial fetch — last PAGE_SIZE messages
   useEffect(() => {
     if (!currentUserId || !partnerId) return;
 
     async function fetchMessages() {
       const supabase = createClient();
-      const { data, error } = await supabase
+      const { data, error, count } = await supabase
         .from("messages")
-        .select("*")
+        .select("*", { count: "exact" })
         .or(
           `and(sender_id.eq.${currentUserId},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${currentUserId})`
         )
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: false })
+        .range(0, PAGE_SIZE - 1);
 
       if (!error && data) {
-        // Load reactions for all messages
-        const msgIds = (data as RawMessage[]).map(m => m.id);
+        // data comes newest-first; reverse so display is chronological
+        const sorted = (data as RawMessage[]).reverse();
+        oldestCreatedAt.current = sorted[0]?.created_at ?? null;
+        setHasMore((count ?? 0) > PAGE_SIZE);
+
+        // Load reactions
+        const msgIds = sorted.map(m => m.id);
         const { data: reactData } = await supabase
           .from("message_reactions")
           .select("message_id, emoji, user_id")
           .in("message_id", msgIds);
 
-        const messagesWithReactions = (data as RawMessage[]).map(msg => ({
+        setMessages(sorted.map(msg => ({
           ...msg,
           _reactions: buildReactions(reactData || [], msg.id, currentUserId!),
-        }));
-
-        setMessages(messagesWithReactions);
+        })));
       }
       setLoading(false);
     }
@@ -78,55 +89,102 @@ export function useRealtimeMessages(
     fetchMessages();
   }, [currentUserId, partnerId]);
 
+  // Load older messages (called on scroll-to-top)
+  const loadMore = useCallback(async () => {
+    if (!currentUserId || !partnerId || !oldestCreatedAt.current) return;
+    const supabase = createClient();
+
+    const { data, error } = await supabase
+      .from("messages")
+      .select("*")
+      .or(
+        `and(sender_id.eq.${currentUserId},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${currentUserId})`
+      )
+      .lt("created_at", oldestCreatedAt.current)
+      .order("created_at", { ascending: false })
+      .range(0, PAGE_SIZE - 1);
+
+    if (!error && data && data.length > 0) {
+      const older = (data as RawMessage[]).reverse();
+      oldestCreatedAt.current = older[0].created_at;
+      setHasMore(data.length === PAGE_SIZE);
+
+      const msgIds = older.map(m => m.id);
+      const { data: reactData } = await supabase
+        .from("message_reactions")
+        .select("message_id, emoji, user_id")
+        .in("message_id", msgIds);
+
+      const withReactions = older.map(msg => ({
+        ...msg,
+        _reactions: buildReactions(reactData || [], msg.id, currentUserId!),
+      }));
+
+      setMessages(prev => [...withReactions, ...prev]);
+    } else {
+      setHasMore(false);
+    }
+  }, [currentUserId, partnerId]);
+
   // Realtime: message inserts + updates + reaction changes
   useEffect(() => {
     if (!currentUserId || !partnerId) return;
     const supabase = createClient();
 
+    const handleNewMessage = (newMsg: RawMessage) => {
+      const isRelevant =
+        (newMsg.sender_id === currentUserId && newMsg.receiver_id === partnerId) ||
+        (newMsg.sender_id === partnerId && newMsg.receiver_id === currentUserId);
+
+      if (!isRelevant) return;
+
+      // Fix delivered receipts: write delivered_at immediately when we receive a message
+      if (newMsg.receiver_id === currentUserId && !newMsg.delivered_at) {
+        supabase
+          .from("messages")
+          .update({ delivered_at: new Date().toISOString() })
+          .eq("id", newMsg.id)
+          .then(() => {});
+      }
+
+      setMessages(prev => {
+        if (prev.some(m => m.id === newMsg.id)) return prev;
+        const next = [...prev, { ...newMsg, _reactions: [], _isNew: true }];
+        return next.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      });
+    };
+
+    const handleUpdateMessage = (updated: RawMessage) => {
+      setMessages(prev => prev.map(m => (m.id === updated.id ? { ...m, ...updated } : m)));
+    };
+
+    const channelId = `chat:${currentUserId}:${partnerId}-${Math.random()}`;
     const channel = supabase
-      .channel(`chat:${currentUserId}:${partnerId}`)
+      .channel(channelId)
       .on(
         "postgres_changes",
-        { 
-          event: "INSERT", 
-          schema: "public", 
-          table: "messages"
-        },
-        (payload) => {
-          console.log('[Realtime] New message INSERT:', payload.new);
-          const newMsg = payload.new as RawMessage;
-          const isRelevant =
-            (newMsg.sender_id === currentUserId && newMsg.receiver_id === partnerId) ||
-            (newMsg.sender_id === partnerId && newMsg.receiver_id === currentUserId);
-          
-          if (isRelevant) {
-            console.log('[Realtime] Message is relevant, adding to state');
-            setMessages((prev) => {
-              if (prev.some((m) => m.id === newMsg.id)) return prev;
-              const next = [...prev, { ...newMsg, _reactions: [] }];
-              return next.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-            });
-          } else {
-            console.log('[Realtime] Message ignored (not for this chat)');
-          }
-        }
+        { event: "INSERT", schema: "public", table: "messages", filter: `receiver_id=eq.${currentUserId}` },
+        (payload) => handleNewMessage(payload.new as RawMessage)
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "messages" },
-        (payload) => {
-          console.log('[Realtime] Message UPDATE:', payload.new);
-          const updated = payload.new as RawMessage;
-          setMessages((prev) =>
-            prev.map((m) => (m.id === updated.id ? { ...m, ...updated } : m))
-          );
-        }
+        { event: "INSERT", schema: "public", table: "messages", filter: `sender_id=eq.${currentUserId}` },
+        (payload) => handleNewMessage(payload.new as RawMessage)
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages", filter: `receiver_id=eq.${currentUserId}` },
+        (payload) => handleUpdateMessage(payload.new as RawMessage)
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages", filter: `sender_id=eq.${currentUserId}` },
+        (payload) => handleUpdateMessage(payload.new as RawMessage)
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "message_reactions" },
         async (payload) => {
-          console.log('[Realtime] Reaction change:', payload.event);
           const msgId = (payload.new as { message_id: string })?.message_id
             || (payload.old as { message_id: string })?.message_id;
           if (!msgId) return;
@@ -136,8 +194,8 @@ export function useRealtimeMessages(
             .select("message_id, emoji, user_id")
             .eq("message_id", msgId);
 
-          setMessages((prev) =>
-            prev.map((m) =>
+          setMessages(prev =>
+            prev.map(m =>
               m.id === msgId
                 ? { ...m, _reactions: buildReactions(reactData || [], msgId, currentUserId!) }
                 : m
@@ -159,14 +217,18 @@ export function useRealtimeMessages(
   }, [currentUserId, partnerId]);
 
   // Mark messages as read when chat is open
+  const processedUnreadIds = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     if (!currentUserId || !partnerId || !messages.length) return;
     const supabase = createClient();
     const unread = messages.filter(
-      (m) => m.sender_id === partnerId && m.receiver_id === currentUserId && !m.read_at
+      m => m.sender_id === partnerId && m.receiver_id === currentUserId && !m.read_at && !processedUnreadIds.current.has(m.id)
     );
     if (!unread.length) return;
-    const ids = unread.map((m) => m.id);
+    const ids = unread.map(m => m.id);
+    ids.forEach(id => processedUnreadIds.current.add(id));
+
     supabase
       .from("messages")
       .update({ read_at: new Date().toISOString() })
@@ -175,19 +237,19 @@ export function useRealtimeMessages(
   }, [messages, currentUserId, partnerId]);
 
   const addOptimisticMessage = useCallback((msg: RawMessage) => {
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === msg.id)) return prev;
-      return [...prev, { ...msg, _reactions: [] }];
+    setMessages(prev => {
+      if (prev.some(m => m.id === msg.id)) return prev;
+      return [...prev, { ...msg, _reactions: [], _isNew: true }];
     });
   }, []);
 
   const clearMessages = useCallback(() => setMessages([]), []);
 
   const updateMessage = useCallback((id: string, patch: Partial<RawMessage>) => {
-    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+    setMessages(prev => prev.map(m => (m.id === id ? { ...m, ...patch } : m)));
   }, []);
 
-  return { messages, loading, addOptimisticMessage, clearMessages, updateMessage };
+  return { messages, loading, hasMore, loadMore, addOptimisticMessage, clearMessages, updateMessage };
 }
 
 function buildReactions(

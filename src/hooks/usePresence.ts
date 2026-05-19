@@ -23,7 +23,8 @@ export function usePresence(currentUserId: string, partnerId: string) {
   useEffect(() => {
     const supabase = createClient();
 
-    const channel = supabase.channel(`presence:${conversationId}`, {
+    const channelId = `presence:${conversationId}-${Math.random()}`;
+    const channel = supabase.channel(channelId, {
       config: { presence: { key: currentUserId } },
     });
 

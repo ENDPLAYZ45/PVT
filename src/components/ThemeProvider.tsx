@@ -15,6 +15,7 @@ export function useTheme() {
 
 export default function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>("light");
+  const [mounted, setMounted] = useState(false);
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -23,6 +24,7 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
     const initial = saved ?? preferred;
     setTheme(initial);
     document.documentElement.setAttribute("data-theme", initial);
+    setMounted(true);
   }, []);
 
   const toggle = () => {
@@ -33,6 +35,8 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
       return next;
     });
   };
+
+  if (!mounted) return null;
 
   return (
     <ThemeContext.Provider value={{ theme, toggle }}>

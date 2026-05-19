@@ -34,6 +34,7 @@ function loadNotes(): Note[] {
 }
 
 function saveNotes(notes: Note[]) {
+  if (typeof window === "undefined") return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
 }
 

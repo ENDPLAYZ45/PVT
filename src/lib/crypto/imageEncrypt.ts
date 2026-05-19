@@ -27,7 +27,7 @@ export async function encryptImageForUpload(
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const fileBuffer = await file.arrayBuffer();
   const encrypted = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv: iv.buffer.slice(0) as ArrayBuffer },
+    { name: "AES-GCM", iv: iv },
     aesKey,
     fileBuffer
   );
@@ -64,7 +64,7 @@ export async function decryptImageBlob(
   );
 
   const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: iv.buffer.slice(0) as ArrayBuffer },
+    { name: "AES-GCM", iv: iv },
     aesKey,
     encryptedData
   );

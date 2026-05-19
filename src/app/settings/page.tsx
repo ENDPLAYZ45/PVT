@@ -96,7 +96,7 @@ export default function SettingsPage() {
       await supabase.auth.signOut();
       localStorage.clear();
       router.push("/signup");
-    } catch (err) {
+    } catch {
       setDeleteError("Failed to delete account");
       setDeleting(false);
     }

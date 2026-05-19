@@ -6,6 +6,8 @@ import { encryptMessage } from "@/lib/crypto/encrypt";
 import { encryptImageForUpload } from "@/lib/crypto/imageEncrypt";
 import { RawMessage } from "@/hooks/useRealtimeMessages";
 import { DecryptedMessage } from "@/components/ChatWindow";
+import { motion, AnimatePresence } from "framer-motion";
+import { Smile, Paperclip, Send, X, Edit3, Reply, Loader2, Check } from "lucide-react";
 import { storage } from "@/lib/firebase/client";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -25,9 +27,6 @@ interface MessageInputProps {
   onCancelEdit: () => void;
   onEditSent: (id: string, newPlaintext: string, ciphertext: string, senderCiphertext: string) => void;
 }
-
-import { motion, AnimatePresence } from "framer-motion";
-import { Smile, Paperclip, Send, X, Edit3, Reply, Loader2, Check } from "lucide-react";
 
 export default function MessageInput({
   receiverId,

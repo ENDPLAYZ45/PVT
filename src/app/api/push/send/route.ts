@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
+
+const ratelimit = new Ratelimit({
+  redis: Redis.fromEnv(),
+  limiter: Ratelimit.slidingWindow(10, "10 s"),
+});
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +26,12 @@ export async function POST(req: NextRequest) {
   
   if (webhookSecret !== process.env.WEBHOOK_SECRET) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const ip = req.headers.get("x-forwarded-for") ?? "127.0.0.1";
+  const { success } = await ratelimit.limit(ip);
+  if (!success) {
+    return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
   }
 
   const body = await req.json();

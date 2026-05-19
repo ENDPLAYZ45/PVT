@@ -49,19 +49,19 @@ const ICE_SERVERS: RTCConfiguration = {
     { urls: "stun:stun2.l.google.com:19302" },
     // Free open relay TURN — handles strict NAT / mobile data networks
     {
-      urls: "turn:openrelay.metered.ca:80",
-      username: "openrelayproject",
-      credential: "openrelayproject",
+      urls: process.env.NEXT_PUBLIC_TURN_URL || "turn:openrelay.metered.ca:80",
+      username: process.env.NEXT_PUBLIC_TURN_USERNAME || "openrelayproject",
+      credential: process.env.NEXT_PUBLIC_TURN_PASSWORD || "openrelayproject",
     },
     {
-      urls: "turn:openrelay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject",
+      urls: process.env.NEXT_PUBLIC_TURN_URL_443 || "turn:openrelay.metered.ca:443",
+      username: process.env.NEXT_PUBLIC_TURN_USERNAME || "openrelayproject",
+      credential: process.env.NEXT_PUBLIC_TURN_PASSWORD || "openrelayproject",
     },
     {
-      urls: "turn:openrelay.metered.ca:443?transport=tcp",
-      username: "openrelayproject",
-      credential: "openrelayproject",
+      urls: process.env.NEXT_PUBLIC_TURN_URL_TCP || "turn:openrelay.metered.ca:443?transport=tcp",
+      username: process.env.NEXT_PUBLIC_TURN_USERNAME || "openrelayproject",
+      credential: process.env.NEXT_PUBLIC_TURN_PASSWORD || "openrelayproject",
     },
   ],
 };
@@ -132,12 +132,12 @@ export function CallProvider({ currentUserId, children }: { currentUserId: strin
     cleanupMySignals().catch(console.error);
   }, [stopTracks, cleanupMySignals]);
 
-  const flushIceBuf = async (pc: RTCPeerConnection) => {
+  const flushIceBuf = useCallback(async (pc: RTCPeerConnection) => {
     for (const c of iceBufRef.current) {
       await pc.addIceCandidate(new RTCIceCandidate(c)).catch(console.error);
     }
     iceBufRef.current = [];
-  };
+  }, []);
 
   const createPc = useCallback((partnerId: string) => {
     const pc = new RTCPeerConnection(ICE_SERVERS);
@@ -263,7 +263,7 @@ export function CallProvider({ currentUserId, children }: { currentUserId: strin
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [currentUserId, createPc, handleHangup, cleanupMySignals]);
+  }, [currentUserId, createPc, handleHangup, cleanupMySignals, flushIceBuf]);
 
   // ── getUserMedia with proper error messaging ──
   const getMedia = async (isVideo: boolean): Promise<MediaStream | null> => {

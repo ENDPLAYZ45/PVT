@@ -7,21 +7,6 @@ import { createClient } from "@/lib/supabase/client";
 import ThemeToggle from "./ThemeToggle";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 
-const AVATAR_COLORS = [
-  "conversation-avatar--yellow",
-  "conversation-avatar--pink",
-  "conversation-avatar--blue",
-  "conversation-avatar--lime",
-];
-
-function getAvatarColor(id: string) {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) {
-    hash = id.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-}
-
 function formatTime(dateStr: string) {
   const d = new Date(dateStr);
   const now = new Date();
@@ -38,7 +23,7 @@ interface Conversation {
   username: string;
   avatar_url?: string;
   last_message_at: string;
-  unread: boolean;
+  unread: number;
 }
 
 interface ChatSidebarProps {
@@ -178,7 +163,9 @@ export default function ChatSidebar({
                   <span className="conversation-time">
                     {formatTime(convo.last_message_at)}
                   </span>
-                  {convo.unread && <div className="conversation-unread" />}
+                  {convo.unread > 0 && (
+                    <div className="conversation-unread">{convo.unread > 99 ? "99+" : convo.unread}</div>
+                  )}
                 </div>
               </motion.div>
             ))}
