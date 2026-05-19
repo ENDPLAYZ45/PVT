@@ -44,10 +44,13 @@ export function useRealtimeMessages(
   const [hasMore, setHasMore] = useState(false);
   const oldestCreatedAt = useRef<string | null>(null);
 
-  // ── Initial fetch — last PAGE_SIZE messages ──────────────────────────────
+  // ─── fetchMessages ────────────────────────────────────────────────────────
+  // The SINGLE source of truth. Called on mount and on every realtime INSERT.
+  // This is the same pattern useConversations uses for its sidebar — it works.
   const fetchMessages = useCallback(async () => {
     if (!currentUserId || !partnerId) return;
     const supabase = createClient();
+
     const { data, error, count } = await supabase
       .from("messages")
       .select("*", { count: "exact" })
@@ -57,7 +60,12 @@ export function useRealtimeMessages(
       .order("created_at", { ascending: false })
       .range(0, PAGE_SIZE - 1);
 
-    if (!error && data) {
+    if (error) {
+      console.error("[useRealtimeMessages] fetchMessages error:", error.message);
+      return;
+    }
+
+    if (data) {
       const sorted = (data as RawMessage[]).reverse();
       oldestCreatedAt.current = sorted[0]?.created_at ?? null;
       setHasMore((count ?? 0) > PAGE_SIZE);
@@ -68,21 +76,28 @@ export function useRealtimeMessages(
         .select("message_id, emoji, user_id")
         .in("message_id", msgIds.length ? msgIds : ["00000000-0000-0000-0000-000000000000"]);
 
-      setMessages(sorted.map(msg => ({
-        ...msg,
-        _reactions: buildReactions(reactData || [], msg.id, currentUserId!),
-      })));
+      setMessages(prev => {
+        // Preserve _isNew flags for messages that are already in state
+        const prevMap = new Map(prev.map(m => [m.id, m]));
+        return sorted.map(msg => ({
+          ...msg,
+          _reactions: buildReactions(reactData || [], msg.id, currentUserId!),
+          _isNew: prevMap.has(msg.id) ? false : true,
+        }));
+      });
     }
+
     setLoading(false);
   }, [currentUserId, partnerId]);
 
+  // Initial load
   useEffect(() => {
     setLoading(true);
     setMessages([]);
     fetchMessages();
   }, [fetchMessages]);
 
-  // ── Load older messages (pagination) ─────────────────────────────────────
+  // ─── Load older pages ─────────────────────────────────────────────────────
   const loadMore = useCallback(async () => {
     if (!currentUserId || !partnerId || !oldestCreatedAt.current) return;
     const supabase = createClient();
@@ -108,75 +123,33 @@ export function useRealtimeMessages(
         .select("message_id, emoji, user_id")
         .in("message_id", msgIds);
 
-      const withReactions = older.map(msg => ({
-        ...msg,
-        _reactions: buildReactions(reactData || [], msg.id, currentUserId!),
-      }));
-
-      setMessages(prev => [...withReactions, ...prev]);
+      setMessages(prev => [
+        ...older.map(msg => ({
+          ...msg,
+          _reactions: buildReactions(reactData || [], msg.id, currentUserId!),
+        })),
+        ...prev,
+      ]);
     } else {
       setHasMore(false);
     }
   }, [currentUserId, partnerId]);
 
-  // ── Realtime subscription ─────────────────────────────────────────────────
+  // ─── Realtime subscription ────────────────────────────────────────────────
   useEffect(() => {
     if (!currentUserId || !partnerId) return;
     const supabase = createClient();
 
-    // Fetch the FULL row from DB instead of relying on payload.new.
-    // payload.new can be missing fields if REPLICA IDENTITY wasn't set at insert time.
-    const handleNewMessageById = async (id: string) => {
-      const { data, error } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("id", id)
-        .single();
-
-      if (error || !data) {
-        console.warn("[Realtime] Could not fetch message", id, error?.message);
-        return;
-      }
-
-      const newMsg = data as RawMessage;
-
-      // Guard: only process messages for this exact conversation
-      const isRelevant =
-        (newMsg.sender_id === currentUserId && newMsg.receiver_id === partnerId) ||
-        (newMsg.sender_id === partnerId && newMsg.receiver_id === currentUserId);
-      if (!isRelevant) return;
-
-      // Write delivered_at when we are the receiver
-      if (newMsg.receiver_id === currentUserId && !newMsg.delivered_at) {
-        supabase
-          .from("messages")
-          .update({ delivered_at: new Date().toISOString() })
-          .eq("id", newMsg.id)
-          .then(() => {});
-      }
-
-      setMessages(prev => {
-        if (prev.some(m => m.id === newMsg.id)) return prev;
-        const next = [...prev, { ...newMsg, _reactions: [], _isNew: true }];
-        return next.sort(
-          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        );
-      });
-    };
-
-    const handleUpdateMessage = (updated: RawMessage) => {
-      setMessages(prev =>
-        prev.map(m => (m.id === updated.id ? { ...m, ...updated } : m))
-      );
-    };
-
-    // Use a stable channel name — no Math.random() so React StrictMode doesn't
-    // double-subscribe, and cleanup properly removes the old channel.
-    const channelName = `chat:${[currentUserId, partnerId].sort().join(":")}`;
+    // Each user gets a UNIQUE channel name based on their OWN userId first.
+    // If we sort, both A and B share "chat:A:B" — Supabase can merge/conflict them.
+    const channelName = `chat:${currentUserId}:${partnerId}`;
 
     const channel = supabase
-      .channel(channelName, { config: { presence: { key: currentUserId } } })
-      // ── INSERT: messages sent TO me ──────────────────────────────────────
+      .channel(channelName)
+      // ── New message sent TO me ─────────────────────────────────────────────
+      // Use fetchMessages() — the same reliable pattern that works for the
+      // sidebar. Avoids relying on payload.new which can be incomplete, and
+      // avoids the read-replica lag problem with single-row lookups.
       .on(
         "postgres_changes",
         {
@@ -185,12 +158,12 @@ export function useRealtimeMessages(
           table: "messages",
           filter: `receiver_id=eq.${currentUserId}`,
         },
-        payload => {
-          const id = (payload.new as { id: string })?.id;
-          if (id) handleNewMessageById(id);
+        () => {
+          console.log("[Realtime] INSERT received — refetching messages");
+          fetchMessages();
         }
       )
-      // ── INSERT: messages I sent (for optimistic reconciliation) ──────────
+      // ── Sent message confirmation (optimistic message already shown) ────────
       .on(
         "postgres_changes",
         {
@@ -199,12 +172,12 @@ export function useRealtimeMessages(
           table: "messages",
           filter: `sender_id=eq.${currentUserId}`,
         },
-        payload => {
-          const id = (payload.new as { id: string })?.id;
-          if (id) handleNewMessageById(id);
+        () => {
+          // Refetch to reconcile the optimistic message with the real DB id/timestamps
+          fetchMessages();
         }
       )
-      // ── UPDATE: messages where I am receiver (read/delivered receipts) ───
+      // ── Message updated (edit / delete / delivered / read) ────────────────
       .on(
         "postgres_changes",
         {
@@ -213,9 +186,13 @@ export function useRealtimeMessages(
           table: "messages",
           filter: `receiver_id=eq.${currentUserId}`,
         },
-        payload => handleUpdateMessage(payload.new as RawMessage)
+        payload => {
+          const updated = payload.new as RawMessage;
+          setMessages(prev =>
+            prev.map(m => (m.id === updated.id ? { ...m, ...updated } : m))
+          );
+        }
       )
-      // ── UPDATE: messages I sent (edit/delete reflects back) ──────────────
       .on(
         "postgres_changes",
         {
@@ -224,16 +201,21 @@ export function useRealtimeMessages(
           table: "messages",
           filter: `sender_id=eq.${currentUserId}`,
         },
-        payload => handleUpdateMessage(payload.new as RawMessage)
+        payload => {
+          const updated = payload.new as RawMessage;
+          setMessages(prev =>
+            prev.map(m => (m.id === updated.id ? { ...m, ...updated } : m))
+          );
+        }
       )
-      // ── Reactions ────────────────────────────────────────────────────────
+      // ── Reactions ─────────────────────────────────────────────────────────
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "message_reactions" },
         async payload => {
           const msgId =
-            (payload.new as { message_id: string })?.message_id ||
-            (payload.old as { message_id: string })?.message_id;
+            (payload.new as { message_id?: string })?.message_id ||
+            (payload.old as { message_id?: string })?.message_id;
           if (!msgId) return;
 
           const { data: reactData } = await supabase
@@ -251,16 +233,13 @@ export function useRealtimeMessages(
         }
       )
       .subscribe(status => {
-        console.log(`[Realtime] ${channelName} →`, status);
+        console.log(`[Realtime] ${channelName} → ${status}`);
         if (status === "CHANNEL_ERROR") {
-          console.error(
-            "[Realtime] Channel error! Check: 1) supabase_realtime publication includes messages table, 2) REPLICA IDENTITY FULL is set, 3) RLS allows SELECT for sender/receiver."
-          );
-          // Auto-retry after 3 seconds
+          console.error("[Realtime] Channel error — retrying fetch in 3s");
           setTimeout(() => fetchMessages(), 3000);
         }
         if (status === "TIMED_OUT") {
-          console.warn("[Realtime] Timed out. Refetching...");
+          console.warn("[Realtime] Timed out — refetching");
           fetchMessages();
         }
       });
@@ -270,12 +249,13 @@ export function useRealtimeMessages(
     };
   }, [currentUserId, partnerId, fetchMessages]);
 
-  // ── Mark messages as read when chat is open ───────────────────────────────
+  // ─── Mark messages as read ────────────────────────────────────────────────
   const processedUnreadIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!currentUserId || !partnerId || !messages.length) return;
     const supabase = createClient();
+
     const unread = messages.filter(
       m =>
         m.sender_id === partnerId &&
@@ -284,6 +264,7 @@ export function useRealtimeMessages(
         !processedUnreadIds.current.has(m.id)
     );
     if (!unread.length) return;
+
     const ids = unread.map(m => m.id);
     ids.forEach(id => processedUnreadIds.current.add(id));
 
@@ -292,9 +273,19 @@ export function useRealtimeMessages(
       .update({ read_at: new Date().toISOString() })
       .in("id", ids)
       .then(() => {});
+
+    // Also mark delivered for any that slipped through
+    const undelivered = unread.filter(m => !m.delivered_at);
+    if (undelivered.length) {
+      supabase
+        .from("messages")
+        .update({ delivered_at: new Date().toISOString() })
+        .in("id", undelivered.map(m => m.id))
+        .then(() => {});
+    }
   }, [messages, currentUserId, partnerId]);
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // ─── Helpers ──────────────────────────────────────────────────────────────
   const addOptimisticMessage = useCallback((msg: RawMessage) => {
     setMessages(prev => {
       if (prev.some(m => m.id === msg.id)) return prev;
