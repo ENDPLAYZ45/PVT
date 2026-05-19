@@ -34,6 +34,7 @@ export interface RawMessage {
 }
 
 const PAGE_SIZE = 50;
+const POLL_INTERVAL_MS = 3000; // fallback poll every 3s
 
 export function useRealtimeMessages(
   currentUserId: string | undefined,
@@ -43,10 +44,9 @@ export function useRealtimeMessages(
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(false);
   const oldestCreatedAt = useRef<string | null>(null);
+  const lastKnownCount = useRef(0);
 
   // ─── fetchMessages ────────────────────────────────────────────────────────
-  // The SINGLE source of truth. Called on mount and on every realtime INSERT.
-  // This is the same pattern useConversations uses for its sidebar — it works.
   const fetchMessages = useCallback(async () => {
     if (!currentUserId || !partnerId) return;
     const supabase = createClient();
@@ -61,7 +61,7 @@ export function useRealtimeMessages(
       .range(0, PAGE_SIZE - 1);
 
     if (error) {
-      console.error("[useRealtimeMessages] fetchMessages error:", error.message);
+      console.error("[Messages] fetch error:", error.message);
       return;
     }
 
@@ -69,6 +69,7 @@ export function useRealtimeMessages(
       const sorted = (data as RawMessage[]).reverse();
       oldestCreatedAt.current = sorted[0]?.created_at ?? null;
       setHasMore((count ?? 0) > PAGE_SIZE);
+      lastKnownCount.current = count ?? 0;
 
       const msgIds = sorted.map(m => m.id);
       const { data: reactData } = await supabase
@@ -77,12 +78,12 @@ export function useRealtimeMessages(
         .in("message_id", msgIds.length ? msgIds : ["00000000-0000-0000-0000-000000000000"]);
 
       setMessages(prev => {
-        // Preserve _isNew flags for messages that are already in state
         const prevMap = new Map(prev.map(m => [m.id, m]));
         return sorted.map(msg => ({
           ...msg,
           _reactions: buildReactions(reactData || [], msg.id, currentUserId!),
-          _isNew: prevMap.has(msg.id) ? false : true,
+          // Keep _isNew only for genuinely new messages (not in previous state)
+          _isNew: !prevMap.has(msg.id),
         }));
       });
     }
@@ -90,10 +91,18 @@ export function useRealtimeMessages(
     setLoading(false);
   }, [currentUserId, partnerId]);
 
+  // Keep a ref to fetchMessages so realtime/polling callbacks always call the
+  // latest version without needing to recreate the subscription.
+  const fetchMessagesRef = useRef(fetchMessages);
+  useEffect(() => {
+    fetchMessagesRef.current = fetchMessages;
+  }, [fetchMessages]);
+
   // Initial load
   useEffect(() => {
     setLoading(true);
     setMessages([]);
+    lastKnownCount.current = 0;
     fetchMessages();
   }, [fetchMessages]);
 
@@ -136,79 +145,47 @@ export function useRealtimeMessages(
   }, [currentUserId, partnerId]);
 
   // ─── Realtime subscription ────────────────────────────────────────────────
+  // Strategy: subscribe WITHOUT a filter (broad channel). Filter client-side.
+  // Filtered subscriptions require specific Supabase Realtime config to work
+  // reliably. Broad subscriptions always work.
   useEffect(() => {
     if (!currentUserId || !partnerId) return;
     const supabase = createClient();
 
-    // Each user gets a UNIQUE channel name based on their OWN userId first.
-    // If we sort, both A and B share "chat:A:B" — Supabase can merge/conflict them.
     const channelName = `chat:${currentUserId}:${partnerId}`;
 
     const channel = supabase
       .channel(channelName)
-      // ── New message sent TO me ─────────────────────────────────────────────
-      // Use fetchMessages() — the same reliable pattern that works for the
-      // sidebar. Avoids relying on payload.new which can be incomplete, and
-      // avoids the read-replica lag problem with single-row lookups.
       .on(
         "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `receiver_id=eq.${currentUserId}`,
-        },
-        () => {
-          console.log("[Realtime] INSERT received — refetching messages");
-          fetchMessages();
-        }
-      )
-      // ── Sent message confirmation (optimistic message already shown) ────────
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `sender_id=eq.${currentUserId}`,
-        },
-        () => {
-          // Refetch to reconcile the optimistic message with the real DB id/timestamps
-          fetchMessages();
-        }
-      )
-      // ── Message updated (edit / delete / delivered / read) ────────────────
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "messages",
-          filter: `receiver_id=eq.${currentUserId}`,
-        },
+        // No filter — receive ALL message events, filter client-side below
+        { event: "*", schema: "public", table: "messages" },
         payload => {
-          const updated = payload.new as RawMessage;
-          setMessages(prev =>
-            prev.map(m => (m.id === updated.id ? { ...m, ...updated } : m))
-          );
+          const row = (payload.new ?? payload.old) as Partial<RawMessage>;
+          const sid = row?.sender_id;
+          const rid = row?.receiver_id;
+
+          // Client-side filter: only process events for THIS conversation
+          const isRelevant =
+            (sid === currentUserId && rid === partnerId) ||
+            (sid === partnerId && rid === currentUserId);
+
+          if (!isRelevant) return;
+
+          if (payload.eventType === "INSERT") {
+            console.log("[Realtime] INSERT — refetching");
+            fetchMessagesRef.current();
+          } else if (payload.eventType === "UPDATE") {
+            const updated = payload.new as RawMessage;
+            setMessages(prev =>
+              prev.map(m => (m.id === updated.id ? { ...m, ...updated } : m))
+            );
+          } else if (payload.eventType === "DELETE") {
+            const deleted = payload.old as { id: string };
+            setMessages(prev => prev.filter(m => m.id !== deleted.id));
+          }
         }
       )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "messages",
-          filter: `sender_id=eq.${currentUserId}`,
-        },
-        payload => {
-          const updated = payload.new as RawMessage;
-          setMessages(prev =>
-            prev.map(m => (m.id === updated.id ? { ...m, ...updated } : m))
-          );
-        }
-      )
-      // ── Reactions ─────────────────────────────────────────────────────────
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "message_reactions" },
@@ -234,20 +211,42 @@ export function useRealtimeMessages(
       )
       .subscribe(status => {
         console.log(`[Realtime] ${channelName} → ${status}`);
-        if (status === "CHANNEL_ERROR") {
-          console.error("[Realtime] Channel error — retrying fetch in 3s");
-          setTimeout(() => fetchMessages(), 3000);
-        }
-        if (status === "TIMED_OUT") {
-          console.warn("[Realtime] Timed out — refetching");
-          fetchMessages();
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn("[Realtime] Connection issue — polling will cover");
         }
       });
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [currentUserId, partnerId, fetchMessages]);
+  }, [currentUserId, partnerId]);
+
+  // ─── Polling fallback ─────────────────────────────────────────────────────
+  // Realtime can be unreliable in some Supabase tiers / network conditions.
+  // This poll runs every 3s and refetches only if the tab is visible.
+  // The decryption cache in ChatWindow ensures only new messages are re-decrypted.
+  useEffect(() => {
+    if (!currentUserId || !partnerId) return;
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        fetchMessagesRef.current();
+      }
+    }, POLL_INTERVAL_MS);
+
+    // Also refetch immediately when the user switches back to the tab
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        fetchMessagesRef.current();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [currentUserId, partnerId]);
 
   // ─── Mark messages as read ────────────────────────────────────────────────
   const processedUnreadIds = useRef<Set<string>>(new Set());
@@ -268,21 +267,12 @@ export function useRealtimeMessages(
     const ids = unread.map(m => m.id);
     ids.forEach(id => processedUnreadIds.current.add(id));
 
+    const now = new Date().toISOString();
     supabase
       .from("messages")
-      .update({ read_at: new Date().toISOString() })
+      .update({ read_at: now, delivered_at: now })
       .in("id", ids)
       .then(() => {});
-
-    // Also mark delivered for any that slipped through
-    const undelivered = unread.filter(m => !m.delivered_at);
-    if (undelivered.length) {
-      supabase
-        .from("messages")
-        .update({ delivered_at: new Date().toISOString() })
-        .in("id", undelivered.map(m => m.id))
-        .then(() => {});
-    }
   }, [messages, currentUserId, partnerId]);
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -293,7 +283,10 @@ export function useRealtimeMessages(
     });
   }, []);
 
-  const clearMessages = useCallback(() => setMessages([]), []);
+  const clearMessages = useCallback(() => {
+    setMessages([]);
+    lastKnownCount.current = 0;
+  }, []);
 
   const updateMessage = useCallback((id: string, patch: Partial<RawMessage>) => {
     setMessages(prev => prev.map(m => (m.id === id ? { ...m, ...patch } : m)));
